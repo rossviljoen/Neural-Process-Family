@@ -71,7 +71,7 @@ model_1d_q_C = partial(
         partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 2), is_sum_merge=True,
     ),
     is_q_zCct=False,
-    **KWARGS,
+    **KWARGS
 )
 
 # Use both the context and target data as inputs to the encoder
@@ -83,7 +83,7 @@ model_1d_q_CT = partial(
         partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 2), is_sum_merge=True,
     ),
     is_q_zCct=True,
-    **KWARGS,
+    **KWARGS
 )
 
 # %%
@@ -104,7 +104,7 @@ KWARGS = dict(
     batch_size=32,
     lr=1e-3,
     decay_lr=10,  # decrease learning rate by 10 during training
-    seed=123,
+    seed=123
 )
 betas = [0.1, 0.8, 1., 1.2, 2]
 
