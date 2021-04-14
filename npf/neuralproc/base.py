@@ -221,9 +221,9 @@ class NeuralProcessFamily(nn.Module, abc.ABC):
         R = self.encode_globally(X_cntxt, Y_cntxt)
 
         if self.encoded_path in ["latent", "both"]:
-            z_samples, q_zCc, q_zCct = self.latent_path(X_cntxt, R, X_trgt, Y_trgt)
+            z_samples, q_zCc, q_zCct, p_z = self.latent_path(X_cntxt, R, X_trgt, Y_trgt)
         else:
-            z_samples, q_zCc, q_zCct = None, None, None
+            z_samples, q_zCc, q_zCct, p_z = None, None, None, None
 
         if self.encoded_path == "latent":
             # if only latent path then cannot depend on deterministic representation
@@ -236,7 +236,7 @@ class NeuralProcessFamily(nn.Module, abc.ABC):
         # batch shape=[n_z_samples, batch_size, *n_trgt] ; event shape=[y_dim]
         p_yCc = self.decode(X_trgt, R_trgt)
 
-        return p_yCc, z_samples, q_zCc, q_zCct
+        return p_yCc, z_samples, q_zCc, q_zCct, p_z
 
     def _validate_inputs(self, X_cntxt, Y_cntxt, X_trgt, Y_trgt):
         """Validates the inputs by checking if features are rescaled to [-1,1] during training."""
@@ -412,7 +412,7 @@ class LatentNeuralProcessFamily(NeuralProcessFamily):
 
     q_z_scale_transformer : callable, optional
         Transformation to apply to the predicted scale (e.g. std for Gaussian) of
-        Y_trgt. The default follows [3] by using a minimum of 0.1 and maximum of 1.
+        Y_trgt. The default follow [3] by using a minimum of 0.1 and maximum of 1.
 
     **kwargs:
         Additional arguments to `NeuralProcessFamily`.
@@ -428,6 +428,8 @@ class LatentNeuralProcessFamily(NeuralProcessFamily):
         n_z_samples_test=32,
         LatentEncoder=None,
         LatentDistribution=MultivariateNormalDiag,
+        PriorDistribution=MultivariateNormalDiag,
+        # prior_params=None, # TODO: add prior parameter settings
         q_z_loc_transformer=nn.Identity(),
         q_z_scale_transformer=lambda z_scale: 0.1 + 0.9 * torch.sigmoid(z_scale),
         z_dim=None,
@@ -450,6 +452,8 @@ class LatentNeuralProcessFamily(NeuralProcessFamily):
             self.r_z_merger = nn.Linear(self.r_dim + self.z_dim, self.r_dim)
 
         self.LatentDistribution = LatentDistribution
+        self.PriorDistribution = PriorDistribution
+        
         self.q_z_loc_transformer = q_z_loc_transformer
         self.q_z_scale_transformer = q_z_scale_transformer
 
@@ -511,7 +515,12 @@ class LatentNeuralProcessFamily(NeuralProcessFamily):
         # size = [n_z_samples, batch_size, *n_lat, z_dim]
         z_samples = sampling_dist.rsample([self.n_z_samples])
 
-        return z_samples, q_zCc, q_zCct
+        p_z = self.PriorDistribution(
+            torch.zeros(self.z_dim, requires_grad=False, device=Y_trgt.device),
+            torch.ones(self.z_dim, requires_grad=False, device=Y_trgt.device)
+        ).expand(q_zCc.batch_shape)
+
+        return z_samples, q_zCc, q_zCct, p_z
 
     def infer_latent_dist(self, X, R):
         """Infer latent distribution given desired features and global representation.

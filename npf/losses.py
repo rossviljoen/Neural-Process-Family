@@ -5,6 +5,7 @@ import math
 import torch
 import torch.nn as nn
 from npf.utils.helpers import (
+    MultivariateNormalDiag,
     LightTailPareto,
     dist_to_device,
     logcumsumexp,
@@ -12,7 +13,7 @@ from npf.utils.helpers import (
 )
 from torch.distributions.kl import kl_divergence
 
-__all__ = ["CNPFLoss", "ELBOLossLNPF", "SUMOLossLNPF", "NLLLossLNPF"]
+__all__ = ["CNPFLoss", "ELBOLossLNPF", "PAC2LossLNPF", "PACMLossLNPF", "PAC2TLossLNPF", "SUMOLossLNPF", "NLLLossLNPF", "TemperedELBOLossLNPF"]
 
 
 def sum_log_prob(prob, sample):
@@ -37,12 +38,22 @@ class BaseLossNPF(nn.Module, abc.ABC):
         Whether to force mac likelihood eval even if has access to q_zCct
     """
 
-    def __init__(self, reduction="mean", is_force_mle_eval=True):
+    def __init__(
+            self,
+            reduction="mean",
+            is_force_mle_eval=True,
+            train_all_data=False,
+            eval_use_crossentropy=True,
+            beta=1.
+    ):
         super().__init__()
         self.reduction = reduction
         self.is_force_mle_eval = is_force_mle_eval
+        self.train_all_data = train_all_data
+        self.eval_use_crossentropy = eval_use_crossentropy
+        self.beta = beta
 
-    def forward(self, pred_outputs, Y_trgt):
+    def forward(self, pred_outputs, Y):
         """Compute the Neural Process Loss.
 
         Parameters
@@ -58,15 +69,22 @@ class BaseLossNPF(nn.Module, abc.ABC):
         loss : torch.Tensor
             size=[batch_size] if `reduction=None` else [1].
         """
-        p_yCc, z_samples, q_zCc, q_zCct = pred_outputs
+        Y_cntxt, Y_trgt = Y['Y_cntxt'], Y['Y_trgt']
+        p_yCc, z_samples, q_zCc, q_zCct, p_z = pred_outputs
 
         if self.training:
-            loss = self.get_loss(p_yCc, z_samples, q_zCc, q_zCct, Y_trgt)
+            if self.train_all_data:
+                loss = self.get_loss(p_yCc, z_samples, q_zCc, q_zCct, p_z, torch.cat([Y_cntxt, Y_trgt], dim=1))
+            else:
+                loss = self.get_loss(p_yCc, z_samples, q_zCc, q_zCct, p_z, Y_trgt)
         else:
             # always uses NPML for evaluation
             if self.is_force_mle_eval:
                 q_zCct = None
-            loss = NLLLossLNPF.get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, Y_trgt)
+            if self.eval_use_crossentropy:
+                loss = CrossEntropyLossLNPF.get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, p_z, Y_trgt)
+            else:
+                loss = NLLLossLNPF.get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, p_z, Y_trgt)
 
         if self.reduction is None:
             # size = [batch_size]
@@ -81,7 +99,7 @@ class BaseLossNPF(nn.Module, abc.ABC):
             raise ValueError(f"Unknown {self.reduction}")
 
     @abc.abstractmethod
-    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, Y_trgt):
+    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, p_z, Y_trgt):
         """Compute the Neural Process Loss
 
         Parameters
@@ -112,7 +130,7 @@ class BaseLossNPF(nn.Module, abc.ABC):
 class CNPFLoss(BaseLossNPF):
     """Losss for conditional neural process (suf-)family [1]."""
 
-    def get_loss(self, p_yCc, _, q_zCc, ___, Y_trgt):
+    def get_loss(self, p_yCc, _, q_zCc, __, ___, Y_trgt):
         assert q_zCc is None
         # \sum_t log p(y^t|z)
         # \sum_t log p(y^t|z). size = [z_samples, batch_size]
@@ -132,7 +150,7 @@ class ELBOLossLNPF(BaseLossNPF):
         arXiv:1807.01622 (2018).
     """
 
-    def get_loss(self, p_yCc, _, q_zCc, q_zCct, Y_trgt):
+    def get_loss(self, p_yCc, _, q_zCc, q_zCct, __, Y_trgt):
 
         # first term in loss is E_{q(z|y_cntxt,y_trgt)}[\sum_t log p(y^t|z)]
         # \sum_t log p(y^t|z). size = [z_samples, batch_size]
@@ -147,7 +165,164 @@ class ELBOLossLNPF(BaseLossNPF):
         # \sum_l ... . size = [batch_size]
         E_z_kl = sum_from_nth_dim(kl_z, 1)
 
+        return -(E_z_sum_log_p_yCz - self.beta * E_z_kl)
+
+class TemperedELBOLossLNPF(BaseLossNPF):
+    """Approximate conditional ELBO [1].
+
+    References
+    ----------
+    [1] Garnelo, Marta, et al. "Neural processes." arXiv preprint
+        arXiv:1807.01622 (2018).
+    """
+
+    def __init__(
+        self,
+        temperature=1.,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.temperature = temperature
+                
+    def get_loss(self, p_yCc, _, q_zCc, q_zCct, __, Y_trgt):
+
+        # first term in loss is E_{q(z|y_cntxt,y_trgt)}[\sum_t log p(y^t|z)]
+        # \sum_t log p(y^t|z). size = [z_samples, batch_size]
+        sum_log_p_yCz = sum_log_prob(p_yCc, Y_trgt)
+
+        # E_{q(z|y_cntxt,y_trgt)}[...] . size = [batch_size]
+        E_z_sum_log_p_yCz = (1. / self.temperature) * sum_log_p_yCz.mean(0)
+
+        # second term in loss is \sum_l KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]
+        # KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]. size = [batch_size, *n_lat]
+        kl_z = kl_divergence(q_zCct, q_zCc)
+        # \sum_l ... . size = [batch_size]
+        E_z_kl = sum_from_nth_dim(kl_z, 1)
+
         return -(E_z_sum_log_p_yCz - E_z_kl)
+
+class PACMLossLNPF(BaseLossNPF):
+    """PAC^m bound
+    """
+
+    def get_loss(self, p_yCc, _, q_zCc, q_zCct, p_z, Y_trgt):
+        n_z_samples, batch_size, *n_trgt = p_yCc.batch_shape
+
+        # first term in loss is E_{q(z|y_cntxt,y_trgt)}[\sum_t log p(y^t|z)]
+        # \sum_t log p(y^t|z). size = [z_samples, batch_size]
+        sum_log_p_yCz = sum_log_prob(p_yCc, Y_trgt)
+
+        # E_{q(z|y_cntxt,y_trgt)}[...] . size = [batch_size]
+        E_z_sum_log_p_yCz = torch.logsumexp(sum_log_p_yCz, dim=0) - math.log(n_z_samples)
+
+        # # second term in loss is \sum_l KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]
+        # # KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]. size = [batch_size, *n_lat]
+        # kl_z = kl_divergence(q_zCct, q_zCc)
+        # TODO: nasty hack - do this properly
+        # dev = Y_trgt.device
+        # prior = MultivariateNormalDiag(
+        #     torch.zeros(q_zCc.base_dist.loc.shape, requires_grad=False, device=dev),
+        #     torch.ones(q_zCc.base_dist.loc.shape, requires_grad=False, device=dev)
+        # )
+        kl_z = kl_divergence(q_zCc, p_z)
+        # \sum_l ... . size = [batch_size]
+        E_z_kl = sum_from_nth_dim(kl_z, 1)
+
+        return -(E_z_sum_log_p_yCz - self.beta * E_z_kl)
+
+class PAC2LossLNPF(BaseLossNPF):
+    """
+    """
+
+    def get_loss(self, p_yCc, _, q_zCc, q_zCct, p_z, Y_trgt):
+        # TODO: Make sure z_samples >= 2?
+        # Make sure it's divisible by 2?
+
+        # size = [n_z_samples, batch_size, *]
+        log_p = p_yCc.log_prob(Y_trgt)
+
+        log_p, log_p_ = torch.chunk(log_p, chunks=2, dim=0)
+
+        eps = 0.1
+        m_xi = (torch.maximum(log_p[0], log_p_[0]) + eps).detach()
+
+        var_term = torch.exp(2*log_p - 2*m_xi) - torch.exp(log_p + log_p_ - 2*m_xi)
+        sum_var = sum_from_nth_dim(var_term, 2)
+        E_z_sum_var = sum_var.mean(0)
+
+        # size = [n_z_samples, batch_size]
+        sum_log_p = sum_from_nth_dim(log_p, 2)
+        
+        # first term in loss is E_{q(z|y_cntxt,y_trgt)}[\sum_t log p(y^t|z)]
+        # \sum_t log p(y^t|z). size = [z_samples, batch_size]
+        # sum_log_p_yCz = sum_log_prob(p_yCc, Y_trgt)
+        sum_log_p_yCz = sum_from_nth_dim(log_p, 2)
+
+        # E_{q(z|y_cntxt,y_trgt)}[...] . size = [batch_size]
+        E_z_sum_log_p_yCz = sum_log_p_yCz.mean(0)
+
+        # second term in loss is \sum_l KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]
+        # KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]. size = [batch_size, *n_lat]
+        # kl_z = kl_divergence(q_zCct, q_zCc)
+
+        kl_z = kl_divergence(q_zCc, p_z)
+        
+        # \sum_l ... . size = [batch_size]
+        E_z_kl = sum_from_nth_dim(kl_z, 1)
+
+        return -(E_z_sum_log_p_yCz + E_z_sum_var - self.beta * E_z_kl)
+
+class PAC2TLossLNPF(BaseLossNPF):
+    """
+    """
+
+    def get_loss(self, p_yCc, _, q_zCc, q_zCct, __, Y_trgt):
+        # TODO: Make sure z_samples >= 2?
+        # Make sure it's divisible by 2?
+
+        # size = [n_z_samples, batch_size, *]
+        log_p = p_yCc.log_prob(Y_trgt)
+
+        # size = [n_z_samples / 2, batch_size, *]
+        log_p, log_p_ = torch.chunk(log_p, chunks=2, dim=0)
+
+        eps = 0.1 # add ε for numerical stability
+        # size = [batch_size, *]
+        m_xi = (torch.maximum(log_p[0], log_p_[0]) + eps).detach()
+
+        
+        alpha_xi = (torch.logsumexp(
+            torch.cat([torch.unsqueeze(log_p, dim=0), torch.unsqueeze(log_p_, dim=0)], dim=0), dim=0
+        ) - m_xi - math.log(2)).detach()
+        exp_alpha_xi = torch.exp(alpha_xi).detach()
+        h_alpha_xi = (alpha_xi / torch.pow(1 - exp_alpha_xi, 2)) + \
+            torch.pow(exp_alpha_xi * (1 - exp_alpha_xi), -1)
+        h_alpha_xi.detach()
+        
+        
+        var_term = h_alpha_xi * torch.exp(2*log_p - 2*m_xi) - torch.exp(log_p + log_p_ - 2*m_xi)
+        sum_var = sum_from_nth_dim(var_term, 2)
+        E_z_sum_var = sum_var.mean(0)
+
+        # size = [n_z_samples, batch_size]
+        sum_log_p = sum_from_nth_dim(log_p, 2)
+        
+        # first term in loss is E_{q(z|y_cntxt,y_trgt)}[\sum_t log p(y^t|z)]
+        # \sum_t log p(y^t|z). size = [z_samples, batch_size]
+        # sum_log_p_yCz, max_log_p_yCz = sum_log_prob_max(p_yCc, Y_trgt)
+        sum_log_p_yCz = sum_log_prob(p_yCc, Y_trgt)
+
+
+        # E_{q(z|y_cntxt,y_trgt)}[...] . size = [batch_size]
+        E_z_sum_log_p_yCz = sum_log_p_yCz.mean(0)
+
+        # second term in loss is \sum_l KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]
+        # KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]. size = [batch_size, *n_lat]
+        kl_z = kl_divergence(q_zCct, q_zCc)
+        # \sum_l ... . size = [batch_size]
+        E_z_kl = sum_from_nth_dim(kl_z, 1)
+
+        return -(E_z_sum_log_p_yCz + E_z_sum_var - E_z_kl)
 
 
 class NLLLossLNPF(BaseLossNPF):
@@ -166,7 +341,7 @@ class NLLLossLNPF(BaseLossNPF):
     [?]
     """
 
-    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, Y_trgt):
+    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, _, Y_trgt):
 
         n_z_samples, batch_size, *n_trgt = p_yCc.batch_shape
 
@@ -202,6 +377,25 @@ class NLLLossLNPF(BaseLossNPF):
         # NEGATIVE log likelihood
         return -log_E_z_sum_p_yCz
 
+class CrossEntropyLossLNPF(BaseLossNPF):
+    """
+    Compute the cross entropy loss from Masegosa
+    """
+
+    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, _, Y_trgt):
+
+        n_z_samples, batch_size, *n_trgt = p_yCc.batch_shape
+        
+        # size = [n_z_samples, batch_size, *]
+        log_p = p_yCc.log_prob(Y_trgt)
+
+        # size = [batch_size, *]
+        logsumexp_p = torch.logsumexp(log_p, 0)
+
+        log_S = sum_from_nth_dim(logsumexp_p - math.log(n_z_samples), 1) 
+
+        return -log_S
+
 
 #! might need gradient clipping as in their paper
 class SUMOLossLNPF(BaseLossNPF):
@@ -232,7 +426,7 @@ class SUMOLossLNPF(BaseLossNPF):
         super().__init__()
         self.p_n_z_samples = p_n_z_samples
 
-    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, Y_trgt):
+    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, _, Y_trgt):
 
         n_z_samples, batch_size, *n_trgt = p_yCc.batch_shape
 

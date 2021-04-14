@@ -30,7 +30,7 @@ def cntxt_trgt_collate(get_cntxt_trgt, is_duplicate_batch=False, **kwargs):
 
         X_cntxt, Y_cntxt, X_trgt, Y_trgt = get_cntxt_trgt(X, y, **kwargs)
         inputs = dict(X_cntxt=X_cntxt, Y_cntxt=Y_cntxt, X_trgt=X_trgt, Y_trgt=Y_trgt)
-        targets = Y_trgt
+        targets = dict(Y_cntxt=Y_cntxt, Y_trgt=Y_trgt)
 
         return inputs, targets
 
