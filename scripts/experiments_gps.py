@@ -106,8 +106,8 @@ KWARGS = dict(
     batch_size=32,
     lr=1e-3,
     decay_lr=10,  # decrease learning rate by 10 during training
-    seed=123,
-    verbose=0
+    seed=123
+    # verbose=0
 )
 betas = [0.1, 0.8, 1., 1.2, 2]
 
