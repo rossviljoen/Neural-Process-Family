@@ -7,6 +7,8 @@ import numpy as np
 import torch
 
 os.chdir("..")
+import sys
+sys.path.append('./')
 
 warnings.filterwarnings("ignore")
 warnings.simplefilter("ignore")
@@ -59,7 +61,7 @@ KWARGS = dict(
     Decoder=merge_flat_input(  # MLP takes single input but we give x and R so merge them
         partial(MLP, n_hidden_layers=4, hidden_size=R_DIM), is_sum_merge=True,
     ),
-    r_dim=R_DIM,
+    r_dim=R_DIM
 )
 
 # Use only the context data as an input to the encoder
@@ -104,7 +106,8 @@ KWARGS = dict(
     batch_size=32,
     lr=1e-3,
     decay_lr=10,  # decrease learning rate by 10 during training
-    seed=123
+    seed=123,
+    verbose=0
 )
 betas = [0.1, 0.8, 1., 1.2, 2]
 
