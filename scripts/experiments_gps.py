@@ -115,16 +115,20 @@ betas = [0.1, 0.8, 1., 1.2, 2]
 for beta in betas:
     trainers_pac2 = train_models(
         gp_datasets,
-        {f"LNP_PAC2_EncC_TrainT_Beta{beta}": model_1d_q_C,
-         f"LNP_PAC2_EncC_TrainTC_Beta{beta}": model_1d_q_C,
-         f"LNP_PAC2_EncCT_TrainT_Beta{beta}":model_1d_q_CT,
-         f"LNP_PAC2_EncCT_TrainTC_Beta{beta}":model_1d_q_CT},
+        {
+            f"LNP_PAC2_EncC_TrainT_Beta{beta}": model_1d_q_C,
+            # f"LNP_PAC2_EncC_TrainTC_Beta{beta}": model_1d_q_C,
+            f"LNP_PAC2_EncCT_TrainT_Beta{beta}":model_1d_q_CT,
+            # f"LNP_PAC2_EncCT_TrainTC_Beta{beta}":model_1d_q_CT
+        },
         criterion=PAC2LossLNPF,
         criterion__beta = beta,
-        models_kwargs={f"LNP_PAC2_EncC_TrainT_Beta{beta}":dict(criterion__train_all_data=False),
-                       f"LNP_PAC2_EncC_TrainTC_Beta{beta}":dict(criterion__train_all_data=True),
-                       f"LNP_PAC2_EncCT_TrainT_Beta{beta}":dict(criterion__train_all_data=False),
-                       f"LNP_PAC2_EncCT_TrainTC_Beta{beta}":dict(criterion__train_all_data=True)},
+        models_kwargs={
+            f"LNP_PAC2_EncC_TrainT_Beta{beta}":dict(criterion__train_all_data=False),
+            # f"LNP_PAC2_EncC_TrainTC_Beta{beta}":dict(criterion__train_all_data=True),
+            f"LNP_PAC2_EncCT_TrainT_Beta{beta}":dict(criterion__train_all_data=False),
+            # f"LNP_PAC2_EncCT_TrainTC_Beta{beta}":dict(criterion__train_all_data=True)
+        },
         **KWARGS
     )
 
@@ -132,16 +136,20 @@ for beta in betas:
 for beta in betas:
     trainers_pacm = train_models(
         gp_datasets,
-        {f"LNP_PACM_EncC_TrainT_Beta{beta}": model_1d_q_C,
-         f"LNP_PACM_EncC_TrainTC_Beta{beta}": model_1d_q_C,
-         f"LNP_PACM_EncCT_TrainT_Beta{beta}":model_1d_q_CT,
-         f"LNP_PACM_EncCT_TrainTC_Beta{beta}":model_1d_q_CT},
+        {
+            f"LNP_PACM_EncC_TrainT_Beta{beta}": model_1d_q_C,
+            # f"LNP_PACM_EncC_TrainTC_Beta{beta}": model_1d_q_C,
+            f"LNP_PACM_EncCT_TrainT_Beta{beta}":model_1d_q_CT,
+            # f"LNP_PACM_EncCT_TrainTC_Beta{beta}":model_1d_q_CT
+        },
         criterion=PACMLossLNPF,
         criterion__beta = beta,
-        models_kwargs={f"LNP_PACM_EncC_TrainT_Beta{beta}":dict(criterion__train_all_data=False),
-                       f"LNP_PACM_EncC_TrainTC_Beta{beta}":dict(criterion__train_all_data=True),
-                       f"LNP_PACM_EncCT_TrainT_Beta{beta}":dict(criterion__train_all_data=False),
-                       f"LNP_PACM_EncCT_TrainTC_Beta{beta}":dict(criterion__train_all_data=True)},
+        models_kwargs={
+            f"LNP_PACM_EncC_TrainT_Beta{beta}":dict(criterion__train_all_data=False),
+            # f"LNP_PACM_EncC_TrainTC_Beta{beta}":dict(criterion__train_all_data=True),
+            f"LNP_PACM_EncCT_TrainT_Beta{beta}":dict(criterion__train_all_data=False),
+            # f"LNP_PACM_EncCT_TrainTC_Beta{beta}":dict(criterion__train_all_data=True)
+        },
         **KWARGS
     )
 
@@ -149,11 +157,15 @@ for beta in betas:
 for beta in betas:
     trainers_elbo = train_models(
         gp_datasets,
-        {f"LNP_ELBO_EncCT_TrainT_Beta{beta}":model_1d_q_CT,
-         f"LNP_ELBO_EncCT_TrainTC_Beta{beta}":model_1d_q_CT},
+        {
+            f"LNP_ELBO_EncCT_TrainT_Beta{beta}":model_1d_q_CT,
+            # f"LNP_ELBO_EncCT_TrainTC_Beta{beta}":model_1d_q_CT
+        },
         criterion=ELBOLossLNPF,
         criterion__beta = beta,
-        models_kwargs={f"LNP_ELBO_EncCT_TrainT_Beta{beta}":dict(criterion__train_all_data=False),
-                       f"LNP_ELBO_EncCT_TrainTC_Beta{beta}":dict(criterion__train_all_data=True)},
+        models_kwargs={
+            f"LNP_ELBO_EncCT_TrainT_Beta{beta}":dict(criterion__train_all_data=False),
+            # f"LNP_ELBO_EncCT_TrainTC_Beta{beta}":dict(criterion__train_all_data=True)
+        },
         **KWARGS
     )
