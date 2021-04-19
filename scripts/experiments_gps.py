@@ -109,7 +109,7 @@ KWARGS = dict(
     seed=123
     # verbose=0
 )
-betas = [0.1, 0.8, 1., 1.2, 2]
+betas = [0.8, 1., 1.2, 2]
 
 # %%
 for beta in betas:
