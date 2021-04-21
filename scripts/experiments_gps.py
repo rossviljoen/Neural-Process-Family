@@ -109,31 +109,30 @@ KWARGS = dict(
     seed=123
     # verbose=0
 )
-betas = [0.8, 1., 1.2, 2]
+# betas = [0.1, 0.8, 1., 1.2, 2]
+betas = [1.]
 
 # %%
 for beta in betas:
-    trainers_pac2 = train_models(
-        gp_datasets,
-        {
-            f"LNP_PAC2_EncC_TrainT_Beta{beta}": model_1d_q_C,
-            # f"LNP_PAC2_EncC_TrainTC_Beta{beta}": model_1d_q_C,
-            f"LNP_PAC2_EncCT_TrainT_Beta{beta}":model_1d_q_CT,
-            # f"LNP_PAC2_EncCT_TrainTC_Beta{beta}":model_1d_q_CT
-        },
-        criterion=PAC2LossLNPF,
-        criterion__beta = beta,
-        models_kwargs={
-            f"LNP_PAC2_EncC_TrainT_Beta{beta}":dict(criterion__train_all_data=False),
-            # f"LNP_PAC2_EncC_TrainTC_Beta{beta}":dict(criterion__train_all_data=True),
-            f"LNP_PAC2_EncCT_TrainT_Beta{beta}":dict(criterion__train_all_data=False),
-            # f"LNP_PAC2_EncCT_TrainTC_Beta{beta}":dict(criterion__train_all_data=True)
-        },
-        **KWARGS
-    )
-
-# %%
-for beta in betas:
+    # trainers_pac2 = train_models(
+    #     gp_datasets,
+    #     {
+    #         f"LNP_PAC2_EncC_TrainT_Beta{beta}": model_1d_q_C,
+    #         # f"LNP_PAC2_EncC_TrainTC_Beta{beta}": model_1d_q_C,
+    #         f"LNP_PAC2_EncCT_TrainT_Beta{beta}":model_1d_q_CT,
+    #         # f"LNP_PAC2_EncCT_TrainTC_Beta{beta}":model_1d_q_CT
+    #     },
+    #     criterion=PAC2LossLNPF,
+    #     criterion__beta = beta,
+    #     models_kwargs={
+    #         f"LNP_PAC2_EncC_TrainT_Beta{beta}":dict(criterion__train_all_data=False),
+    #         # f"LNP_PAC2_EncC_TrainTC_Beta{beta}":dict(criterion__train_all_data=True),
+    #         f"LNP_PAC2_EncCT_TrainT_Beta{beta}":dict(criterion__train_all_data=False),
+    #         # f"LNP_PAC2_EncCT_TrainTC_Beta{beta}":dict(criterion__train_all_data=True)
+    #     },
+    #     **KWARGS
+    # )
+    
     trainers_pacm = train_models(
         gp_datasets,
         {
@@ -152,9 +151,7 @@ for beta in betas:
         },
         **KWARGS
     )
-
-# %%
-for beta in betas:
+    
     trainers_elbo = train_models(
         gp_datasets,
         {
@@ -166,6 +163,61 @@ for beta in betas:
         models_kwargs={
             f"LNP_ELBO_EncCT_TrainT_Beta{beta}":dict(criterion__train_all_data=False),
             # f"LNP_ELBO_EncCT_TrainTC_Beta{beta}":dict(criterion__train_all_data=True)
+        },
+        **KWARGS
+    )
+
+# %%
+train_samples = 32
+
+# Large train sample comparison:
+KWARGS = dict(
+    n_z_samples_train=train_samples,
+    n_z_samples_test=32,  # number of samples when eval
+    XEncoder=partial(MLP, n_hidden_layers=1, hidden_size=R_DIM),
+    Decoder=merge_flat_input(  # MLP takes single input but we give x and R so merge them
+        partial(MLP, n_hidden_layers=4, hidden_size=R_DIM), is_sum_merge=True,
+    ),
+    r_dim=R_DIM,
+    is_q_zCct = False
+)
+
+# Use only the context data as an input to the encoder (i.e. EncC_TrainT)
+model_1d_large_sample = partial(
+    LNP,
+    x_dim=1,
+    y_dim=1,
+    XYEncoder=merge_flat_input(  # MLP takes single input but we give x and y so merge them
+        partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 2), is_sum_merge=True,
+    ),
+    is_q_zCct=False,
+    **KWARGS
+)
+
+# %%
+for beta in betas:
+    trainers_pacm = train_models(
+        gp_datasets,
+        {
+            f"LNP_PACM_Samples{train_samples}_Beta{beta}": model_1d_large_sample
+        },
+        criterion=PACMLossLNPF,
+        criterion__beta = beta,
+        models_kwargs={
+            f"LNP_PACM_Samples{train_samples}_Beta{beta}":dict(criterion__train_all_data=False)
+        },
+        **KWARGS
+    )
+
+    trainers_npml = train_models(
+        gp_datasets,
+        {
+            f"LNP_NPML_Samples{train_samples}_Beta{beta}": model_1d_large_sample
+        },
+        criterion=NLLLossLNPF,
+        criterion__beta = beta,
+        models_kwargs={
+            f"LNP_NPML_Samples{train_samples}_Beta{beta}":dict(criterion__train_all_data=False)
         },
         **KWARGS
     )
