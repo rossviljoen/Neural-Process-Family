@@ -104,28 +104,28 @@ KWARGS = dict(
 betas = [1.]
 
 for beta in betas:
-    trainers_elbo = train_models(
-        img_datasets,
-        add_y_dim({f"LNP_ELBO_EncCT_TrainT_Beta{beta}": model_2d_q_CT}, img_datasets),  # y_dim (channels) depend on data
-        test_datasets=img_test_datasets,
-        train_split=skorch.dataset.CVSplit(0.1),  # use 10% of training for valdiation
-        iterator_train__collate_fn=get_cntxt_trgt_2d,
-        iterator_valid__collate_fn=get_cntxt_trgt_2d,
-        # datasets_kwargs=dict(
-        #     zsmms=dict(iterator_valid__collate_fn=get_cntxt_trgt_2d_extrap,)
-        # ),  # for zsmm use extrapolation
-        max_epochs=50,
-        criterion=ELBOLossLNPF,  # NPVI
-        criterion__beta = beta,
-        **KWARGS
-    )
+    # trainers_elbo = train_models(
+    #     img_datasets,
+    #     add_y_dim({f"LNP_ELBO_EncCT_TrainT_Beta{beta}": model_2d_q_CT}, img_datasets),  # y_dim (channels) depend on data
+    #     test_datasets=img_test_datasets,
+    #     train_split=skorch.dataset.CVSplit(0.1),  # use 10% of training for valdiation
+    #     iterator_train__collate_fn=get_cntxt_trgt_2d,
+    #     iterator_valid__collate_fn=get_cntxt_trgt_2d,
+    #     # datasets_kwargs=dict(
+    #     #     zsmms=dict(iterator_valid__collate_fn=get_cntxt_trgt_2d_extrap,)
+    #     # ),  # for zsmm use extrapolation
+    #     max_epochs=50,
+    #     criterion=ELBOLossLNPF,  # NPVI
+    #     criterion__beta = beta,
+    #     **KWARGS
+    # )
 
     trainers_pacm = train_models(
         img_datasets,
         add_y_dim(
             {
                 f"LNP_PACM_EncCT_TrainT_Beta{beta}": model_2d_q_CT,
-                f"LNP_PACM_EncC_TrainT_Beta{beta}": model_2d_q_C,
+                # f"LNP_PACM_EncC_TrainT_Beta{beta}": model_2d_q_C,
             },
             img_datasets),  # y_dim (channels) depend on data
         test_datasets=img_test_datasets,
@@ -145,8 +145,8 @@ for beta in betas:
         img_datasets,
         add_y_dim(
             {
-                f"LNP_PACM_EncCT_TrainT_Beta{beta}": model_2d_q_CT,
-                f"LNP_PACM_EncC_TrainT_Beta{beta}": model_2d_q_C,
+                f"LNP_PAC2_EncCT_TrainT_Beta{beta}": model_2d_q_CT,
+                f"LNP_PAC2_EncC_TrainT_Beta{beta}": model_2d_q_C,
             },
             img_datasets),  # y_dim (channels) depend on data
         test_datasets=img_test_datasets,
