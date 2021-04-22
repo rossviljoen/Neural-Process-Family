@@ -86,7 +86,7 @@ model_2d_q_C = partial(
 
 
 import skorch
-from npf import ELBOLossLNPF
+from npf import ELBOLossLNPF, PACMLossLNPF, PAC2LossLNPF, PAC2TLossLNPF, TemperedELBOLossLNPF
 from utils.ntbks_helpers import add_y_dim
 from utils.train import train_models
 
