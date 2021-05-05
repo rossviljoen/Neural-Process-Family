@@ -151,7 +151,7 @@ for beta in betas:
     trainers_pacelbo = train_models(
         gp_datasets,
         {
-            f"LNP_PACELBO_EncC_Beta{beta}": model_1d_q_C_bayes,
+            # f"LNP_PACELBO_EncC_Beta{beta}": model_1d_q_C_bayes,
             f"LNP_PACELBO_EncCT_Beta{beta}":model_1d_q_CT_bayes,
         },
         criterion=PACELBOLossLNPF,
@@ -162,7 +162,7 @@ for beta in betas:
     trainers_pacm = train_models(
         gp_datasets,
         {
-            f"LNP_PACM_EncC_Beta{beta}": model_1d_q_C_bayes,
+            # f"LNP_PACM_EncC_Beta{beta}": model_1d_q_C_bayes,
             f"LNP_PACM_EncCT_Beta{beta}":model_1d_q_CT_bayes,
         },
         criterion=PACMLossLNPF,
@@ -183,7 +183,7 @@ for beta in betas:
     trainers_npml = train_models(
         gp_datasets,
         {
-            f"LNP_NPML_EncC_Beta{beta}": model_1d_q_C,
+            # f"LNP_NPML_EncC_Beta{beta}": model_1d_q_C,
             f"LNP_NPML_EncCT_Beta{beta}":model_1d_q_CT,
         },
         criterion=NLLLossLNPF,
