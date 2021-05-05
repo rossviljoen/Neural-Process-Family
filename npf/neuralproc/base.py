@@ -5,7 +5,7 @@ from functools import partial
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from npf.architectures import MLP, merge_flat_input
+from npf.architectures import MLP, merge_flat_input, MergeFlatInputs
 from npf.utils.helpers import (
     MultivariateNormalDiag,
     isin_range,
@@ -237,10 +237,13 @@ class NeuralProcessFamily(nn.Module, abc.ABC):
         p_yCc = self.decode(X_trgt, R_trgt)
 
         try:
-            decoder_kl = self.decoder.kl_q_p()
+            if isinstance(self.decoder, MergeFlatInputs):
+                decoder_kl = self.decoder.flat_module.kl_q_p()
+            else:
+                decoder_kl = self.decoder.kl_q_p()
         except AttributeError:
             decoder_kl = None
-
+        
         return p_yCc, z_samples, q_zCc, q_zCct, p_z, decoder_kl
 
     def _validate_inputs(self, X_cntxt, Y_cntxt, X_trgt, Y_trgt):

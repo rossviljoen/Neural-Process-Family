@@ -11,6 +11,7 @@ __all__ = [
     "SinusoidalEncodings",
     "merge_flat_input",
     "discard_ith_arg",
+    "MergeFlatInputs"
 ]
 
 
