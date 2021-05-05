@@ -143,7 +143,7 @@ KWARGS = dict(
     criterion__eval_use_crossentropy=False,
     # verbose=0
 )
-betas = [0.001, 0.1, 0.8, 1., 1.2, 2]
+betas = [1., 0.001, 0.1, 0.8, 1.2, 2]
 # betas = [1.]
 
 # %%
