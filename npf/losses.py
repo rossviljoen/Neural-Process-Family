@@ -13,7 +13,7 @@ from npf.utils.helpers import (
 )
 from torch.distributions.kl import kl_divergence
 
-__all__ = ["CNPFLoss", "ELBOLossLNPF", "PAC2LossLNPF", "PACMLossLNPF", "PAC2TLossLNPF", "SUMOLossLNPF", "NLLLossLNPF", "TemperedELBOLossLNPF"]
+__all__ = ["CNPFLoss", "ELBOLossLNPF", "PAC2LossLNPF", "PACMLossLNPF", "PAC2TLossLNPF", "SUMOLossLNPF", "NLLLossLNPF", "PACELBOLossLNPF"]
 
 
 def sum_log_prob(prob, sample):
@@ -42,14 +42,14 @@ class BaseLossNPF(nn.Module, abc.ABC):
             self,
             reduction="mean",
             is_force_mle_eval=True,
-            train_all_data=False,
-            eval_use_crossentropy=True,
+            # train_all_data=False,
+            eval_use_crossentropy=False,
             beta=1.
     ):
         super().__init__()
         self.reduction = reduction
         self.is_force_mle_eval = is_force_mle_eval
-        self.train_all_data = train_all_data
+        # self.train_all_data = train_all_data
         self.eval_use_crossentropy = eval_use_crossentropy
         self.beta = beta
 
@@ -70,21 +70,20 @@ class BaseLossNPF(nn.Module, abc.ABC):
             size=[batch_size] if `reduction=None` else [1].
         """
         Y_cntxt, Y_trgt = Y['Y_cntxt'], Y['Y_trgt']
-        p_yCc, z_samples, q_zCc, q_zCct, p_z = pred_outputs
+        p_yCc, z_samples, q_zCc, q_zCct, p_z, decoder_kl = pred_outputs
 
         if self.training:
-            if self.train_all_data:
-                loss = self.get_loss(p_yCc, z_samples, q_zCc, q_zCct, p_z, torch.cat([Y_cntxt, Y_trgt], dim=1))
-            else:
-                loss = self.get_loss(p_yCc, z_samples, q_zCc, q_zCct, p_z, Y_trgt)
+            # if self.train_all_data: # TODO: remove this option
+            #     loss = self.get_loss(p_yCc, z_samples, q_zCc, q_zCct, p_z, decoder_kl, torch.cat([Y_cntxt, Y_trgt], dim=1))
+            loss = self.get_loss(p_yCc, z_samples, q_zCc, q_zCct, p_z, decoder_kl, Y_trgt)
         else:
             # always uses NPML for evaluation
             if self.is_force_mle_eval:
                 q_zCct = None
             if self.eval_use_crossentropy:
-                loss = CrossEntropyLossLNPF.get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, p_z, Y_trgt)
+                loss = CrossEntropyLossLNPF.get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, p_z, decoder_kl, Y_trgt)
             else:
-                loss = NLLLossLNPF.get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, p_z, Y_trgt)
+                loss = NLLLossLNPF.get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, p_z, decoder_kl, Y_trgt)
 
         if self.reduction is None:
             # size = [batch_size]
@@ -99,7 +98,7 @@ class BaseLossNPF(nn.Module, abc.ABC):
             raise ValueError(f"Unknown {self.reduction}")
 
     @abc.abstractmethod
-    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, p_z, Y_trgt):
+    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, p_z, decoder_kl, Y_trgt):
         """Compute the Neural Process Loss
 
         Parameters
@@ -130,7 +129,7 @@ class BaseLossNPF(nn.Module, abc.ABC):
 class CNPFLoss(BaseLossNPF):
     """Losss for conditional neural process (suf-)family [1]."""
 
-    def get_loss(self, p_yCc, _, q_zCc, __, ___, Y_trgt):
+    def get_loss(self, p_yCc, _, q_zCc, __, ___, ____, Y_trgt):
         assert q_zCc is None
         # \sum_t log p(y^t|z)
         # \sum_t log p(y^t|z). size = [z_samples, batch_size]
@@ -150,7 +149,7 @@ class ELBOLossLNPF(BaseLossNPF):
         arXiv:1807.01622 (2018).
     """
 
-    def get_loss(self, p_yCc, _, q_zCc, q_zCct, __, Y_trgt):
+    def get_loss(self, p_yCc, _, q_zCc, q_zCct, __, ___, Y_trgt):
 
         # first term in loss is E_{q(z|y_cntxt,y_trgt)}[\sum_t log p(y^t|z)]
         # \sum_t log p(y^t|z). size = [z_samples, batch_size]
@@ -167,7 +166,7 @@ class ELBOLossLNPF(BaseLossNPF):
 
         return -(E_z_sum_log_p_yCz - self.beta * E_z_kl)
 
-class TemperedELBOLossLNPF(BaseLossNPF):
+class PACELBOLossLNPF(BaseLossNPF):
     """Approximate conditional ELBO [1].
 
     References
@@ -176,36 +175,33 @@ class TemperedELBOLossLNPF(BaseLossNPF):
         arXiv:1807.01622 (2018).
     """
 
-    def __init__(
-        self,
-        temperature=1.,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-        self.temperature = temperature
-                
-    def get_loss(self, p_yCc, _, q_zCc, q_zCct, __, Y_trgt):
+    def get_loss(self, p_yCc, _, q_zCc, q_zCct, p_z, decoder_kl, Y_trgt):
 
         # first term in loss is E_{q(z|y_cntxt,y_trgt)}[\sum_t log p(y^t|z)]
         # \sum_t log p(y^t|z). size = [z_samples, batch_size]
         sum_log_p_yCz = sum_log_prob(p_yCc, Y_trgt)
 
         # E_{q(z|y_cntxt,y_trgt)}[...] . size = [batch_size]
-        E_z_sum_log_p_yCz = (1. / self.temperature) * sum_log_p_yCz.mean(0)
+        E_z_sum_log_p_yCz = sum_log_p_yCz.mean(0)
 
         # second term in loss is \sum_l KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]
         # KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]. size = [batch_size, *n_lat]
-        kl_z = kl_divergence(q_zCct, q_zCc)
+        if q_zCct is not None:
+            kl_z = kl_divergence(q_zCct, p_z)
+        else:
+            kl_z = kl_divergence(q_zCc, p_z)
         # \sum_l ... . size = [batch_size]
         E_z_kl = sum_from_nth_dim(kl_z, 1)
 
-        return -(E_z_sum_log_p_yCz - E_z_kl)
+        decoder_kl = 0. if decoder_kl is None else decoder_kl
+
+        return -(E_z_sum_log_p_yCz - self.beta * (E_z_kl + decoder_kl))
 
 class PACMLossLNPF(BaseLossNPF):
     """PAC^m bound
     """
 
-    def get_loss(self, p_yCc, _, q_zCc, q_zCct, p_z, Y_trgt):
+    def get_loss(self, p_yCc, _, q_zCc, q_zCct, p_z, decoder_kl, Y_trgt):
         n_z_samples, batch_size, *n_trgt = p_yCc.batch_shape
 
         # first term in loss is E_{q(z|y_cntxt,y_trgt)}[\sum_t log p(y^t|z)]
@@ -217,24 +213,23 @@ class PACMLossLNPF(BaseLossNPF):
 
         # # second term in loss is \sum_l KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]
         # # KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]. size = [batch_size, *n_lat]
-        # kl_z = kl_divergence(q_zCct, q_zCc)
-        # TODO: nasty hack - do this properly
-        # dev = Y_trgt.device
-        # prior = MultivariateNormalDiag(
-        #     torch.zeros(q_zCc.base_dist.loc.shape, requires_grad=False, device=dev),
-        #     torch.ones(q_zCc.base_dist.loc.shape, requires_grad=False, device=dev)
-        # )
-        kl_z = kl_divergence(q_zCc, p_z)
+
+        if q_zCct is not None:
+            kl_z = kl_divergence(q_zCct, p_z)
+        else:
+            kl_z = kl_divergence(q_zCc, p_z)
         # \sum_l ... . size = [batch_size]
         E_z_kl = sum_from_nth_dim(kl_z, 1)
 
-        return -(E_z_sum_log_p_yCz - self.beta * E_z_kl)
+        decoder_kl = 0. if decoder_kl is None else decoder_kl
+
+        return -(E_z_sum_log_p_yCz - self.beta * (E_z_kl + decoder_kl))
 
 class PAC2LossLNPF(BaseLossNPF):
     """
     """
 
-    def get_loss(self, p_yCc, _, q_zCc, q_zCct, p_z, Y_trgt):
+    def get_loss(self, p_yCc, _, q_zCc, q_zCct, p_z, decoder_kl, Y_trgt):
         # TODO: Make sure z_samples >= 2?
         # Make sure it's divisible by 2?
 
@@ -265,7 +260,10 @@ class PAC2LossLNPF(BaseLossNPF):
         # KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]. size = [batch_size, *n_lat]
         # kl_z = kl_divergence(q_zCct, q_zCc)
 
-        kl_z = kl_divergence(q_zCc, p_z)
+        if q_zCct is not None:
+            kl_z = kl_divergence(q_zCct, p_z)
+        else:
+            kl_z = kl_divergence(q_zCc, p_z)
         
         # \sum_l ... . size = [batch_size]
         E_z_kl = sum_from_nth_dim(kl_z, 1)
@@ -276,7 +274,7 @@ class PAC2TLossLNPF(BaseLossNPF):
     """
     """
 
-    def get_loss(self, p_yCc, _, q_zCc, q_zCct, __, Y_trgt):
+    def get_loss(self, p_yCc, _, q_zCc, q_zCct, __, decoder_kl, Y_trgt):
         # TODO: Make sure z_samples >= 2?
         # Make sure it's divisible by 2?
 
@@ -318,7 +316,13 @@ class PAC2TLossLNPF(BaseLossNPF):
 
         # second term in loss is \sum_l KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]
         # KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]. size = [batch_size, *n_lat]
-        kl_z = kl_divergence(q_zCct, q_zCc)
+        # kl_z = kl_divergence(q_zCct, q_zCc)
+
+        if q_zCct is not None:
+            kl_z = kl_divergence(q_zCct, p_z)
+        else:
+            kl_z = kl_divergence(q_zCc, p_z)
+
         # \sum_l ... . size = [batch_size]
         E_z_kl = sum_from_nth_dim(kl_z, 1)
 
@@ -341,7 +345,7 @@ class NLLLossLNPF(BaseLossNPF):
     [?]
     """
 
-    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, _, Y_trgt):
+    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, _, __, Y_trgt):
 
         n_z_samples, batch_size, *n_trgt = p_yCc.batch_shape
 
@@ -382,7 +386,7 @@ class CrossEntropyLossLNPF(BaseLossNPF):
     Compute the cross entropy loss from Masegosa
     """
 
-    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, _, Y_trgt):
+    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, _, __, Y_trgt):
 
         n_z_samples, batch_size, *n_trgt = p_yCc.batch_shape
         
@@ -426,7 +430,7 @@ class SUMOLossLNPF(BaseLossNPF):
         super().__init__()
         self.p_n_z_samples = p_n_z_samples
 
-    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, _, Y_trgt):
+    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, _, __, Y_trgt):
 
         n_z_samples, batch_size, *n_trgt = p_yCc.batch_shape
 

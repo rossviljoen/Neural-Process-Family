@@ -236,7 +236,12 @@ class NeuralProcessFamily(nn.Module, abc.ABC):
         # batch shape=[n_z_samples, batch_size, *n_trgt] ; event shape=[y_dim]
         p_yCc = self.decode(X_trgt, R_trgt)
 
-        return p_yCc, z_samples, q_zCc, q_zCct, p_z
+        try:
+            decoder_kl = self.decoder.kl_q_p()
+        except AttributeError:
+            decoder_kl = None
+
+        return p_yCc, z_samples, q_zCc, q_zCct, p_z, decoder_kl
 
     def _validate_inputs(self, X_cntxt, Y_cntxt, X_trgt, Y_trgt):
         """Validates the inputs by checking if features are rescaled to [-1,1] during training."""
@@ -505,6 +510,7 @@ class LatentNeuralProcessFamily(NeuralProcessFamily):
         if self.is_q_zCct and Y_trgt is not None:
             # during training when we know Y_trgt, we can take an expectation over q(z|cntxt,trgt)
             # instead of q(z|cntxt). note that actually does q(z|trgt) because trgt has cntxt
+            # FIXME: ^ this isn't generally true, default setting in utils.datasplit is: is_add_cntxts_to_trgts=False
             R_from_trgt = self.encode_globally(X_trgt, Y_trgt)
             q_zCct = self.infer_latent_dist(X_trgt, R_from_trgt)
             sampling_dist = q_zCct

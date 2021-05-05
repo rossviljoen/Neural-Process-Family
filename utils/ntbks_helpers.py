@@ -81,7 +81,7 @@ def get_datasets_single_gp(**kwargs):
 
     kernels["RBF_Kernel"] = RBF(length_scale=(0.2))
 
-    kernels["Periodic_Kernel"] = ExpSineSquared(length_scale=0.5, periodicity=0.5)
+    # kernels["Periodic_Kernel"] = ExpSineSquared(length_scale=0.5, periodicity=0.5)
 
     # kernels["Matern_Kernel"] = Matern(length_scale=0.2, nu=1.5)
 

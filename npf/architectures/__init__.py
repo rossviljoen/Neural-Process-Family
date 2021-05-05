@@ -4,3 +4,4 @@ from .encoders import *
 from .mlp import *
 from .selfattn import *
 from .setcnn import *
+from .bayesmlp import *
