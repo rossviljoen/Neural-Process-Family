@@ -3,3 +3,4 @@ from .base import *
 from .convnp import *
 from .gridconvnp import *
 from .np import *
+from .pacbayesnp import *
