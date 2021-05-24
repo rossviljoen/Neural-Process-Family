@@ -27,7 +27,8 @@ torch.set_num_threads(N_THREADS)
 # %%
 from utils.ntbks_helpers import get_all_gp_datasets, get_img_datasets, get_gp_datasets
 
-img_datasets, img_test_datasets = get_img_datasets(["celeba32", "mnist"])
+# img_datasets, img_test_datasets = get_img_datasets(["celeba32", "mnist"])
+img_datasets, img_test_datasets = get_img_datasets(["mnist"])
 
 # %%
 from npf.utils.datasplit import (
@@ -118,7 +119,7 @@ TRAINERS_KWARGS = dict(
     is_retrain=True,  # whether to load precomputed model or retrain
     is_reeval=True,
     device=None,  # use GPU if available
-    batch_size=10,
+    batch_size=16,
     lr=1e-3,
     decay_lr=10,  # decrease learning rate by 10 during training
     seed=123,
