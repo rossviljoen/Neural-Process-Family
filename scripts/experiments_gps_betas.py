@@ -149,32 +149,33 @@ KWARGS = dict(
     criterion__eval_use_crossentropy=False,
     # verbose=0
 )
-betas = [1e-6, 1e-4, 1e-2, 1., 1e2]
+# betas = [1e-6, 1e-4, 1e-2, 1., 1e2]
+betas = [1., 1e-2, 1e2, 1e-4]
 # betas = [1.]
 
 # %%
-trainers_npml = train_models(
-    gp_datasets,
-    {
-        f"LNP_NPML_EncC": model_1d_q_C,
-        f"LNP_NPML_EncCT":model_1d_q_CT,
-    },
-    criterion=NLLLossLNPF,
-    criterion__beta = 1.,
-    **KWARGS
-)
+# trainers_npml = train_models(
+#     gp_datasets,
+#     {
+#         f"LNP_NPML_EncC": model_1d_q_C,
+#         f"LNP_NPML_EncCT":model_1d_q_CT,
+#     },
+#     criterion=NLLLossLNPF,
+#     criterion__beta = 1.,
+#     **KWARGS
+# )
 
 for beta in betas:
-    trainers_pacelbo = train_models(
-        gp_datasets,
-        {
-            # f"LNP_PACELBO_EncC_Beta{beta}": model_1d_q_C_bayes,
-            f"LNP_PACELBO_EncCT_Beta{beta}":model_1d_q_CT_bayes,
-        },
-        criterion=PACELBOLossLNPF,
-        criterion__beta = beta,
-        **KWARGS
-    )
+    # trainers_pacelbo = train_models(
+    #     gp_datasets,
+    #     {
+    #         # f"LNP_PACELBO_EncC_Beta{beta}": model_1d_q_C_bayes,
+    #         f"LNP_PACELBO_EncCT_Beta{beta}":model_1d_q_CT_bayes,
+    #     },
+    #     criterion=PACELBOLossLNPF,
+    #     criterion__beta = beta,
+    #     **KWARGS
+    # )
     
     trainers_pacm = train_models(
         gp_datasets,
