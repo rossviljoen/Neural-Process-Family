@@ -27,7 +27,7 @@ torch.set_num_threads(N_THREADS)
 # %%
 from utils.ntbks_helpers import get_all_gp_datasets, get_img_datasets, get_gp_datasets
 
-img_datasets, img_test_datasets = get_img_datasets(["mnist"])
+img_datasets, img_test_datasets = get_img_datasets(["celeba32", "mnist"])
 
 # %%
 from npf.utils.datasplit import (
@@ -48,57 +48,63 @@ get_cntxt_trgt_2d = cntxt_trgt_collate(
 
 from functools import partial
 
-from npf import LNP
+from npf import LNP, PACBayesLNP
 from npf.architectures import MLP, BayesianMLP, merge_flat_input
 from utils.helpers import count_parameters
 
+n_samples_train = 8
+n_samples_test = 32
+
 R_DIM = 128
-KWARGS = dict(
-    n_z_samples_train=8,
-    n_z_samples_test=32,  # number of samples when eval
-    XEncoder=partial(MLP, n_hidden_layers=1, hidden_size=R_DIM),
+MODEL_KWARGS = dict(
+    n_z_samples_train=n_samples_train,
+    n_z_samples_test=n_samples_test,  # number of samples when eval
     r_dim=R_DIM,
-    is_q_zCct=True  # will use NPVI => posterior sampling
+    x_dim=2,
+    XYEncoder=merge_flat_input(  # MLP takes single input but we give x and y so merge them
+        partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 3), is_sum_merge=True,
+    ),
 )
 
-bayes_decoder=merge_flat_input(  # MLP takes single input but we give x and R so merge them
+bayes_xencoder = partial(
+    BayesianMLP, n_hidden_layers=1, hidden_size=R_DIM, input_sampled=False,
+    n_samples_train=n_samples_train, n_samples_test=n_samples_test
+)
+
+bayes_decoder=merge_flat_input(
     partial(BayesianMLP, n_hidden_layers=4, hidden_size=R_DIM), is_sum_merge=True,
 )
 
-non_bayes_decoder=merge_flat_input(  # MLP takes single input but we give x and R so merge them
+non_bayes_xencoder=partial(MLP, n_hidden_layers=1, hidden_size=R_DIM)
+
+non_bayes_decoder=merge_flat_input(
     partial(MLP, n_hidden_layers=4, hidden_size=R_DIM), is_sum_merge=True,
 )
 
 # image (2D) case
 model_2d_bayes = partial(
-    LNP,
-    x_dim=2,
-    XYEncoder=merge_flat_input(  # MLP takes single input but we give x and y so merge them
-        partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 3), is_sum_merge=True,
-    ),
+    PACBayesLNP,
+    XEncoder=bayes_xencoder,
     Decoder=bayes_decoder,
-    **KWARGS
-)  # don't add y_dim yet because depends on data
+    is_q_zCct=True,
+    **MODEL_KWARGS
+)
 
 model_2d_non_bayes = partial(
     LNP,
-    x_dim=2,
-    XYEncoder=merge_flat_input(  # MLP takes single input but we give x and y so merge them
-        partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 3), is_sum_merge=True,
-    ),
+    XEncoder=non_bayes_xencoder,
     Decoder=non_bayes_decoder,
-    **KWARGS
-)  # don't add y_dim yet because depends on data
+    is_q_zCct=True,
+    **MODEL_KWARGS
+)
 
-# model_2d_q_C = partial(
-#     LNP,
-#     x_dim=2,
-#     XYEncoder=merge_flat_input(  # MLP takes single input but we give x and y so merge them
-#         partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 3), is_sum_merge=True,
-#     ),
-#     is_q_zCct=False,
-#     **KWARGS
-# )  # don't add y_dim yet because depends on data
+model_2d_q_C_non_bayes = partial(
+    LNP,
+    XEncoder=non_bayes_xencoder,
+    Decoder=non_bayes_decoder,
+    is_q_zCct=False,
+    **MODEL_KWARGS
+)
 
 
 import skorch
@@ -106,8 +112,9 @@ from npf import ELBOLossLNPF, PACMLossLNPF, PAC2LossLNPF, PAC2TLossLNPF, PACELBO
 from utils.ntbks_helpers import add_y_dim
 from utils.train import train_models
 
-KWARGS = dict(
-    chckpnt_dirname="results/experiments_05-05-21/",
+TRAINERS_KWARGS = dict(
+    chckpnt_dirname="results/experiments_24-05-21/",
+    max_epochs=40,
     is_retrain=True,  # whether to load precomputed model or retrain
     is_reeval=True,
     device=None,  # use GPU if available
@@ -115,10 +122,29 @@ KWARGS = dict(
     lr=1e-3,
     decay_lr=10,  # decrease learning rate by 10 during training
     seed=123,
-    criterion__eval_use_crossentropy=False
+    criterion__eval_use_crossentropy=False,
+    test_datasets=img_test_datasets,
+    train_split=skorch.dataset.CVSplit(0.1),  # use 10% of training for valdiation
+    iterator_train__collate_fn=get_cntxt_trgt_2d,
+    iterator_valid__collate_fn=get_cntxt_trgt_2d,
 )
 
-betas = [1.]
+
+# # %%
+trainers_npml = train_models(
+    img_datasets,
+    add_y_dim(
+        {
+            f"LNP_NPML_EncC": model_2d_q_C_non_bayes,
+            f"LNP_NPML_EncCT": model_2d_non_bayes,
+        },
+        img_datasets),  # y_dim (channels) depend on data
+    criterion=NLLLossLNPF,  # NPVI
+    criterion__beta = 1.,
+    **TRAINERS_KWARGS
+)
+
+betas = [1e-6, 1e-4, 1e-2, 1., 1e2]
 
 for beta in betas:
     trainers_pacelbo = train_models(
@@ -128,17 +154,9 @@ for beta in betas:
                 f"LNP_PACELBO_EncCT_Beta{beta}": model_2d_bayes,
             },
             img_datasets),  # y_dim (channels) depend on data
-        test_datasets=img_test_datasets,
-        train_split=skorch.dataset.CVSplit(0.1),  # use 10% of training for valdiation
-        iterator_train__collate_fn=get_cntxt_trgt_2d,
-        iterator_valid__collate_fn=get_cntxt_trgt_2d,
-        # datasets_kwargs=dict(
-        #     zsmms=dict(iterator_valid__collate_fn=get_cntxt_trgt_2d_extrap,)
-        # ),  # for zsmm use extrapolation
-        max_epochs=50,
-        criterion=PACELBOLossLNPF,  # NPVI
+        criterion=PACELBOLossLNPF,
         criterion__beta = beta,
-        **KWARGS
+        **TRAINERS_KWARGS
     )
 
     trainers_pacm = train_models(
@@ -148,51 +166,27 @@ for beta in betas:
                 f"LNP_PACM_EncCT_Beta{beta}": model_2d_bayes,
             },
             img_datasets),  # y_dim (channels) depend on data
-        test_datasets=img_test_datasets,
-        train_split=skorch.dataset.CVSplit(0.1),  # use 10% of training for valdiation
-        iterator_train__collate_fn=get_cntxt_trgt_2d,
-        iterator_valid__collate_fn=get_cntxt_trgt_2d,
-        # datasets_kwargs=dict(
-        #     zsmms=dict(iterator_valid__collate_fn=get_cntxt_trgt_2d_extrap,)
-        # ),  # for zsmm use extrapolation
-        max_epochs=50,
-        criterion=PACMLossLNPF,  # NPVI
+        criterion=PACMLossLNPF,
         criterion__beta = beta,
-        **KWARGS
+        **TRAINERS_KWARGS
+    )
+
+    trainers_pacm_joint = train_models(
+        img_datasets,
+        add_y_dim(
+            {
+                f"LNP_PACM_Joint_EncCT_Beta{beta}": model_2d_bayes,
+            },
+            img_datasets),  # y_dim (channels) depend on data
+        criterion=PACMLossLNPF,
+        criterion__beta = beta,
+        **TRAINERS_KWARGS
     )
     
     trainers_elbo = train_models(
         img_datasets,
         add_y_dim({f"LNP_ELBO_EncCT_Beta{beta}": model_2d_non_bayes}, img_datasets),  # y_dim (channels) depend on data
-        test_datasets=img_test_datasets,
-        train_split=skorch.dataset.CVSplit(0.1),  # use 10% of training for valdiation
-        iterator_train__collate_fn=get_cntxt_trgt_2d,
-        iterator_valid__collate_fn=get_cntxt_trgt_2d,
-        # datasets_kwargs=dict(
-        #     zsmms=dict(iterator_valid__collate_fn=get_cntxt_trgt_2d_extrap,)
-        # ),  # for zsmm use extrapolation
-        max_epochs=50,
-        criterion=ELBOLossLNPF,  # NPVI
+        criterion=ELBOLossLNPF,
         criterion__beta = beta,
-        **KWARGS
-    )
-
-    trainers_npml = train_models(
-        img_datasets,
-        add_y_dim(
-            {
-                f"LNP_NPML_EncCT_Beta{beta}": model_2d_non_bayes,
-            },
-            img_datasets),  # y_dim (channels) depend on data
-        test_datasets=img_test_datasets,
-        train_split=skorch.dataset.CVSplit(0.1),  # use 10% of training for valdiation
-        iterator_train__collate_fn=get_cntxt_trgt_2d,
-        iterator_valid__collate_fn=get_cntxt_trgt_2d,
-        # datasets_kwargs=dict(
-        #     zsmms=dict(iterator_valid__collate_fn=get_cntxt_trgt_2d_extrap,)
-        # ),  # for zsmm use extrapolation
-        max_epochs=50,
-        criterion=NLLLossLNPF,  # NPVI
-        criterion__beta = beta,
-        **KWARGS
+        **TRAINERS_KWARGS
     )

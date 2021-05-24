@@ -16,6 +16,7 @@ from .helpers import (
 
 __all__ = [
     "get_all_indcs",
+    "get_remaining_indcs",
     "GetRangeIndcs",
     "GetRandomIndcs",
     "CntxtTrgtGetter",
@@ -33,6 +34,14 @@ def get_all_indcs(batch_size, n_possible_points):
     """
     return torch.arange(n_possible_points).expand(batch_size, n_possible_points)
 
+def get_remaining_indcs(batch_size, n_possible_points, context_indcs):
+    """
+    Return all indices not in the context set.
+    """
+    all_indcs = get_all_indcs(batch_size, n_possible_points)
+    mask = np.ones(all_indcs.shape, dtype=bool)
+    np.put_along_axis(mask, context_indcs.detach().numpy(), False, axis=1) # TODO: do this in torch?
+    return torch.masked_select(all_indcs, torch.tensor(mask)).reshape((batch_size, -1))
 
 class GetRangeIndcs:
     """Get all indices in a certain range."""
@@ -200,7 +209,10 @@ class CntxtTrgtGetter:
         if context_indcs is None:
             context_indcs = self.contexts_getter(batch_size, num_points)
         if target_indcs is None:
-            target_indcs = self.targets_getter(batch_size, num_points)
+            try:
+                target_indcs = self.targets_getter(batch_size, num_points, context_indcs)
+            except TypeError:
+                target_indcs = self.targets_getter(batch_size, num_points)
 
         if self.is_add_cntxts_to_trgts:
             target_indcs = self.add_cntxts_to_trgts(

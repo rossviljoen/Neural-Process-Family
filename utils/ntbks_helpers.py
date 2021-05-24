@@ -83,7 +83,7 @@ def get_datasets_single_gp(**kwargs):
 
     # kernels["Periodic_Kernel"] = ExpSineSquared(length_scale=0.5, periodicity=0.5)
 
-    # kernels["Matern_Kernel"] = Matern(length_scale=0.2, nu=1.5)
+    kernels["Matern_Kernel"] = Matern(length_scale=0.2, nu=1.5)
 
     kernels["Noisy_Matern_Kernel"] = WhiteKernel(noise_level=0.1) + Matern(
         length_scale=0.2, nu=1.5
@@ -169,7 +169,6 @@ def get_gp_datasets(
     }
 
     return datasets, datasets_test, datasets_valid
-
 
 # HELPERS
 class StrFormatter:

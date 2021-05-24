@@ -459,6 +459,12 @@ class LatentNeuralProcessFamily(NeuralProcessFamily):
         self.q_z_loc_transformer = q_z_loc_transformer
         self.q_z_scale_transformer = q_z_scale_transformer
 
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.p_z = self.PriorDistribution(
+            torch.zeros(self.z_dim, requires_grad=False, device=self.device),
+            torch.ones(self.z_dim, requires_grad=False, device=self.device)
+        )
+
         if self.z_dim != self.r_dim and self.encoded_path == "latent":
             # will reshape the z samples to make sure they can be given to the decoder
             self.reshaper_z = nn.Linear(self.z_dim, self.r_dim)
@@ -517,7 +523,7 @@ class LatentNeuralProcessFamily(NeuralProcessFamily):
         # size = [n_z_samples, batch_size, *n_lat, z_dim]
         z_samples = sampling_dist.rsample([self.n_z_samples])
 
-        p_z = None
+        p_z = self.p_z
 
         return z_samples, q_zCc, q_zCct, p_z
 

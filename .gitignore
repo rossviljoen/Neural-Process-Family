@@ -5,7 +5,7 @@ doc/
 *old*
 *backup*/
 *archive*
-*test*
+# *test*
 !utils/data
 src/
 logs/

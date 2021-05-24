@@ -36,6 +36,7 @@ from npf.utils.datasplit import (
     RandomMasker,
     get_all_indcs,
     no_masker,
+    get_remaining_indcs,
 )
 from utils.data import cntxt_trgt_collate, get_test_upscale_factor
 
@@ -46,95 +47,100 @@ get_cntxt_trgt_1d = cntxt_trgt_collate(
     )
 )
 
+get_cntxt_trgt_1d_test = cntxt_trgt_collate(
+    CntxtTrgtGetter(
+        contexts_getter=GetRandomIndcs(a=0.0, b=50), targets_getter=get_remaining_indcs,
+    )
+)
+
+
 # %%
 from functools import partial
 
-from npf import LNP
+from npf import LNP, PACBayesLNP
 from npf.architectures import MLP, BayesianMLP, merge_flat_input
 from utils.helpers import count_parameters
 
+n_samples_train = 8
+n_samples_test = 32
+
 R_DIM = 128
-KWARGS = dict(
-    n_z_samples_train=8,
-    n_z_samples_test=32,  # number of samples when eval
-    XEncoder=partial(MLP, n_hidden_layers=1, hidden_size=R_DIM),
-    r_dim=R_DIM
+MODEL_KWARGS = dict(
+    x_dim=1,
+    y_dim=1,
+    n_z_samples_train=n_samples_train,
+    n_z_samples_test=n_samples_test,  # number of samples when eval
+    r_dim=R_DIM,
+    XYEncoder=merge_flat_input(  # MLP takes single input but we give x and y so merge them
+        partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 2), is_sum_merge=True,
+    ),
 )
 
-bayes_decoder=merge_flat_input(  # MLP takes single input but we give x and R so merge them
-    partial(BayesianMLP, n_hidden_layers=4, hidden_size=R_DIM), is_sum_merge=True,
+bayes_xencoder = partial(
+    BayesianMLP, n_hidden_layers=1, hidden_size=R_DIM, input_sampled=False,
+    n_samples_train=n_samples_train, n_samples_test=n_samples_test
+)
+
+bayes_decoder = merge_flat_input(
+    partial(BayesianMLP, n_hidden_layers=4, hidden_size=R_DIM), is_sum_merge=False,
 )
 
 # Use only the context data as an input to the encoder
 model_1d_q_C_bayes = partial(
-    LNP,
-    x_dim=1,
-    y_dim=1,
-    XYEncoder=merge_flat_input(  # MLP takes single input but we give x and y so merge them
-        partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 2), is_sum_merge=True,
-    ),
+    PACBayesLNP,
     is_q_zCct=False,
+    XEncoder=bayes_xencoder,
     Decoder=bayes_decoder,
-    **KWARGS
+    **MODEL_KWARGS
 )
 
 # Use both the context and target data as inputs to the encoder
 model_1d_q_CT_bayes = partial(
-    LNP,
-    x_dim=1,
-    y_dim=1,
-    XYEncoder=merge_flat_input(  # MLP takes single input but we give x and y so merge them
-        partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 2), is_sum_merge=True,
-    ),
+    PACBayesLNP,
     is_q_zCct=True,
+    XEncoder=bayes_xencoder,
     Decoder=bayes_decoder,
-    **KWARGS
+    **MODEL_KWARGS
 )
 
-non_bayes_decoder=merge_flat_input(  # MLP takes single input but we give x and R so merge them
+non_bayes_xencoder = partial(MLP, n_hidden_layers=1, hidden_size=R_DIM)
+
+non_bayes_decoder = merge_flat_input(  # MLP takes single input but we give x and R so merge them
     partial(MLP, n_hidden_layers=4, hidden_size=R_DIM), is_sum_merge=True,
 )
 
 # Use only the context data as an input to the encoder
 model_1d_q_C = partial(
     LNP,
-    x_dim=1,
-    y_dim=1,
-    XYEncoder=merge_flat_input(  # MLP takes single input but we give x and y so merge them
-        partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 2), is_sum_merge=True,
-    ),
     is_q_zCct=False,
+    XEncoder=non_bayes_xencoder,
     Decoder=non_bayes_decoder,
-    **KWARGS
+    **MODEL_KWARGS
 )
 
 # Use both the context and target data as inputs to the encoder
 model_1d_q_CT = partial(
     LNP,
-    x_dim=1,
-    y_dim=1,
-    XYEncoder=merge_flat_input(  # MLP takes single input but we give x and y so merge them
-        partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 2), is_sum_merge=True,
-    ),
     is_q_zCct=True,
+    XEncoder=non_bayes_xencoder,
     Decoder=non_bayes_decoder,
-    **KWARGS
+    **MODEL_KWARGS
 )
 
 # %%
 import skorch
-from npf import ELBOLossLNPF, PACMLossLNPF, PAC2LossLNPF, PAC2TLossLNPF, PACELBOLossLNPF, NLLLossLNPF
+from npf import ELBOLossLNPF, PACMLossLNPF, PAC2LossLNPF, PAC2TLossLNPF, PACELBOLossLNPF, NLLLossLNPF, PACMJointLossLNPF
 from utils.ntbks_helpers import add_y_dim
 from utils.train import train_models
 
 KWARGS = dict(
     test_datasets=gp_test_datasets,
     iterator_train__collate_fn=get_cntxt_trgt_1d,
-    iterator_valid__collate_fn=get_cntxt_trgt_1d,
-    max_epochs=50,
+    iterator_valid__collate_fn=get_cntxt_trgt_1d_test,
+    max_epochs=30,
     is_retrain=True,  # whether to load precomputed model or retrain
     is_reeval=True,
-    chckpnt_dirname="results/experiments_05-05-21/",
+    chckpnt_dirname="results/experiments_24-05-21/",
     device=None,  # use GPU if available
     batch_size=32,
     lr=1e-3,
@@ -143,10 +149,21 @@ KWARGS = dict(
     criterion__eval_use_crossentropy=False,
     # verbose=0
 )
-betas = [1., 0.001, 0.1, 0.8, 1.2, 2]
+betas = [1e-6, 1e-4, 1e-2, 1., 1e2]
 # betas = [1.]
 
 # %%
+trainers_npml = train_models(
+    gp_datasets,
+    {
+        f"LNP_NPML_EncC": model_1d_q_C,
+        f"LNP_NPML_EncCT":model_1d_q_CT,
+    },
+    criterion=NLLLossLNPF,
+    criterion__beta = 1.,
+    **KWARGS
+)
+
 for beta in betas:
     trainers_pacelbo = train_models(
         gp_datasets,
@@ -169,6 +186,17 @@ for beta in betas:
         criterion__beta = beta,
         **KWARGS
     )
+
+    trainers_pacm_joint = train_models(
+        gp_datasets,
+        {
+            # f"LNP_PACM_EncC_Beta{beta}": model_1d_q_C_bayes,
+            f"LNP_PACM_Joint_EncCT_Beta{beta}":model_1d_q_CT_bayes,
+        },
+        criterion=PACMJointLossLNPF,
+        criterion__beta = beta,
+        **KWARGS
+    )
     
     trainers_elbo = train_models(
         gp_datasets,
@@ -180,13 +208,3 @@ for beta in betas:
         **KWARGS
     )
 
-    trainers_npml = train_models(
-        gp_datasets,
-        {
-            # f"LNP_NPML_EncC_Beta{beta}": model_1d_q_C,
-            f"LNP_NPML_EncCT_Beta{beta}":model_1d_q_CT,
-        },
-        criterion=NLLLossLNPF,
-        criterion__beta = beta,
-        **KWARGS
-    )

@@ -68,7 +68,7 @@ class BayesianMLP(nn.Module):
         out = self.out(out)
         return out
 
-    def kl_q_p(self, reduction="sum"):
+    def kl_q_p(self, reduction="mean"):
         first = self.to_hidden.kl_q_p()
         middles = sum(l.kl_q_p() for l in self.linears)
         last = self.out.kl_q_p()
