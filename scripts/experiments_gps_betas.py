@@ -150,8 +150,6 @@ KWARGS = dict(
     # verbose=0
 )
 # betas = [1e-6, 1e-4, 1e-2, 1., 1e2]
-betas = [1., 1e-2, 1e2, 1e-4]
-# betas = [1.]
 
 # %%
 # trainers_npml = train_models(
@@ -165,7 +163,7 @@ betas = [1., 1e-2, 1e2, 1e-4]
 #     **KWARGS
 # )
 
-for beta in betas:
+# for beta in betas:
     # trainers_pacelbo = train_models(
     #     gp_datasets,
     #     {
@@ -177,35 +175,90 @@ for beta in betas:
     #     **KWARGS
     # )
     
-    trainers_pacm = train_models(
-        gp_datasets,
-        {
-            # f"LNP_PACM_EncC_Beta{beta}": model_1d_q_C_bayes,
-            f"LNP_PACM_EncCT_Beta{beta}":model_1d_q_CT_bayes,
-        },
-        criterion=PACMLossLNPF,
-        criterion__beta = beta,
-        **KWARGS
-    )
+    # trainers_pacm = train_models(
+    #     gp_datasets,
+    #     {
+    #         # f"LNP_PACM_EncC_Beta{beta}": model_1d_q_C_bayes,
+    #         f"LNP_PACM_EncCT_Beta{beta}":model_1d_q_CT_bayes,
+    #     },
+    #     criterion=PACMLossLNPF,
+    #     criterion__beta = beta,
+    #     **KWARGS
+    # )
 
-    trainers_pacm_joint = train_models(
-        gp_datasets,
-        {
-            # f"LNP_PACM_EncC_Beta{beta}": model_1d_q_C_bayes,
-            f"LNP_PACM_Joint_EncCT_Beta{beta}":model_1d_q_CT_bayes,
-        },
-        criterion=PACMJointLossLNPF,
-        criterion__beta = beta,
-        **KWARGS
-    )
+    # trainers_pacm_joint = train_models(
+    #     gp_datasets,
+    #     {
+    #         # f"LNP_PACM_EncC_Beta{beta}": model_1d_q_C_bayes,
+    #         f"LNP_PACM_Joint_EncCT_Beta{beta}":model_1d_q_CT_bayes,
+    #     },
+    #     criterion=PACMJointLossLNPF,
+    #     criterion__beta = beta,
+    #     **KWARGS
+    # )
     
-    trainers_elbo = train_models(
-        gp_datasets,
-        {
-            f"LNP_ELBO_EncCT_Beta{beta}":model_1d_q_CT,
-        },
-        criterion=ELBOLossLNPF,
-        criterion__beta = beta,
-        **KWARGS
-    )
+    # trainers_elbo = train_models(
+    #     gp_datasets,
+    #     {
+    #         f"LNP_ELBO_EncCT_Beta{beta}":model_1d_q_CT,
+    #     },
+    #     criterion=ELBOLossLNPF,
+    #     criterion__beta = beta,
+    #     **KWARGS
+    # )
 
+beta=1e-6
+trainers_elbo = train_models(
+    gp_datasets,
+    {
+        f"LNP_ELBO_EncCT_Beta{beta}":model_1d_q_CT,
+    },
+    criterion=ELBOLossLNPF,
+    criterion__beta = beta,
+    **KWARGS
+)
+    
+trainers_pacm_joint = train_models(
+    gp_datasets,
+    {
+        # f"LNP_PACM_EncC_Beta{beta}": model_1d_q_C_bayes,
+        f"LNP_PACM_Joint_EncCT_Beta{beta}":model_1d_q_CT_bayes,
+    },
+    criterion=PACMJointLossLNPF,
+    criterion__beta = beta,
+    **KWARGS
+)
+
+beta=1e-2
+trainers_elbo = train_models(
+    gp_datasets,
+    {
+        f"LNP_ELBO_EncCT_Beta{beta}":model_1d_q_CT,
+    },
+    criterion=ELBOLossLNPF,
+    criterion__beta = beta,
+    **KWARGS
+)
+
+trainers_pacelbo = train_models(
+    gp_datasets,
+    {
+        # f"LNP_PACELBO_EncC_Beta{beta}": model_1d_q_C_bayes,
+        f"LNP_PACELBO_EncCT_Beta{beta}":model_1d_q_CT_bayes,
+    },
+    criterion=PACELBOLossLNPF,
+    criterion__beta = beta,
+    **KWARGS
+)
+
+beta=1.
+trainers_pacelbo = train_models(
+    gp_datasets,
+    {
+        # f"LNP_PACELBO_EncC_Beta{beta}": model_1d_q_C_bayes,
+        f"LNP_PACELBO_EncCT_Beta{beta}":model_1d_q_CT_bayes,
+    },
+    criterion=PACELBOLossLNPF,
+    criterion__beta = beta,
+    **KWARGS
+)
