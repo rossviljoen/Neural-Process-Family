@@ -35,6 +35,7 @@ from npf.utils.datasplit import (
     GridCntxtTrgtGetter,
     RandomMasker,
     get_all_indcs,
+    get_remaining_indcs,
     no_masker,
 )
 from utils.data import cntxt_trgt_collate, get_test_upscale_factor
@@ -46,19 +47,31 @@ get_cntxt_trgt_1d = cntxt_trgt_collate(
     )
 )
 
+get_cntxt_trgt_1d_test = cntxt_trgt_collate(
+    CntxtTrgtGetter(
+        contexts_getter=GetRandomIndcs(a=0.0, b=50), targets_getter=get_remaining_indcs,
+    )
+)
+
+
 # %%
 from functools import partial
 
-from npf import LNP
+from npf import LNP, PACBayesLNP
 from npf.architectures import MLP, BayesianMLP, merge_flat_input
 from utils.helpers import count_parameters
 
+n_samples_test=32
+
 R_DIM = 128
-KWARGS = dict(
-    n_z_samples_test=32,  # number of samples when eval
-    XEncoder=partial(MLP, n_hidden_layers=1, hidden_size=R_DIM),
+MODEL_KWARGS = dict(
+    x_dim=1,
+    y_dim=1,
     r_dim=R_DIM,
-    is_q_zCct=True,
+    n_z_samples_test=n_samples_test,
+    XYEncoder=merge_flat_input(  # MLP takes single input but we give x and y so merge them
+        partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 2), is_sum_merge=True,
+    ),
 )
 
 bayes_decoder=merge_flat_input(  # MLP takes single input but we give x and R so merge them
@@ -69,35 +82,47 @@ n_samples_list = [1, 2, 4, 8, 16, 32]
 
 bayes_models = {}
 for n in n_samples_list:
+    bayes_xencoder = partial(
+        BayesianMLP, n_hidden_layers=1, hidden_size=R_DIM, input_sampled=False,
+        n_samples_train=n
+    )
     bayes_models[n] = partial(
-        LNP,
-        x_dim=1,
-        y_dim=1,
-        XYEncoder=merge_flat_input(  # MLP takes single input but we give x and y so merge them
-            partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 2), is_sum_merge=True,
-        ),
+        PACBayesLNP,
+        XEncoder=bayes_xencoder,
         Decoder=bayes_decoder,
         n_z_samples_train=n,
-        **KWARGS
+        is_q_zCct=True,
+        **MODEL_KWARGS
     )
+
+non_bayes_xencoder = partial(MLP, n_hidden_layers=1, hidden_size=R_DIM)
 
 non_bayes_decoder=merge_flat_input(  # MLP takes single input but we give x and R so merge them
     partial(MLP, n_hidden_layers=4, hidden_size=R_DIM), is_sum_merge=True,
 )
 
-non_bayes_models = {}
+non_bayes_models_q_CT = {}
+non_bayes_models_q_C = {}
+
 for n in n_samples_list:
-    non_bayes_models[n] = partial(
+    non_bayes_models_q_CT[n] = partial(
         LNP,
-        x_dim=1,
-        y_dim=1,
-        XYEncoder=merge_flat_input(  # MLP takes single input but we give x and y so merge them
-            partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 2), is_sum_merge=True,
-        ),
+        XEncoder=non_bayes_xencoder,
         Decoder=non_bayes_decoder,
         n_z_samples_train=n,
-        **KWARGS
+        is_q_zCct=True,
+        **MODEL_KWARGS
     )
+
+    non_bayes_models_q_C[n] = partial(
+        LNP,
+        XEncoder=non_bayes_xencoder,
+        Decoder=non_bayes_decoder,
+        n_z_samples_train=n,
+        is_q_zCct=False,
+        **MODEL_KWARGS
+    )
+
 
 # %%
 import skorch
@@ -109,10 +134,10 @@ KWARGS = dict(
     test_datasets=gp_test_datasets,
     iterator_train__collate_fn=get_cntxt_trgt_1d,
     iterator_valid__collate_fn=get_cntxt_trgt_1d,
-    max_epochs=50,
+    max_epochs=30,
     is_retrain=True,  # whether to load precomputed model or retrain
     is_reeval=True,
-    chckpnt_dirname="results/experiments_05-05-21/",
+    chckpnt_dirname="results/experiments_24-05-21/",
     device=None,  # use GPU if available
     batch_size=32,
     lr=1e-3,
@@ -122,10 +147,9 @@ KWARGS = dict(
     # verbose=0
 )
 
-beta = 1.
-
 # %%
 for n in n_samples_list:
+    beta=1.
     trainers_pacm = train_models(
         gp_datasets,
         {
@@ -139,7 +163,7 @@ for n in n_samples_list:
     trainers_elbo = train_models(
         gp_datasets,
         {
-            f"LNP_ELBO_EncCT_Beta{beta}_nsamples{n}":non_bayes_models[n],
+            f"LNP_ELBO_Beta{beta}_nsamples{n}":non_bayes_models_q_CT[n],
         },
         criterion=ELBOLossLNPF,
         criterion__beta = beta,
@@ -149,19 +173,20 @@ for n in n_samples_list:
     trainers_npml = train_models(
         gp_datasets,
         {
-            f"LNP_NPML_EncCT_Beta{beta}_nsamples{n}":non_bayes_models[n],
+            f"LNP_NPML_nsamples{n}":non_bayes_models_q_C[n],
         },
         criterion=NLLLossLNPF,
         criterion__beta = beta,
         **KWARGS
     )
 
-    trainers_pacelbo = train_models(
+    beta=1e-6
+    trainers_pacm = train_models(
         gp_datasets,
         {
-            f"LNP_PACELBO_EncCT_Beta{beta}_nsamples{n}":bayes_models[n],
+            f"LNP_PACM_EncCT_Beta{beta}_nsamples{n}":bayes_models[n],
         },
-        criterion=PACELBOLossLNPF,
+        criterion=PACMLossLNPF,
         criterion__beta = beta,
         **KWARGS
     )
