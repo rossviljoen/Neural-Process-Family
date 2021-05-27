@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import logging
 import os
 import warnings
@@ -24,9 +26,9 @@ torch.set_num_threads(N_THREADS)
 
 # %%
 from utils.ntbks_helpers import get_all_gp_datasets, get_img_datasets, get_gp_datasets
-from sklearn.gaussian_process.kernels import RBF
 
-gp_datasets, gp_test_datasets, gp_valid_datasets = get_all_gp_datasets()
+# img_datasets, img_test_datasets = get_img_datasets(["celeba32", "mnist"])
+img_datasets, img_test_datasets = get_img_datasets(["mnist"])
 
 # %%
 from npf.utils.datasplit import (
@@ -35,47 +37,45 @@ from npf.utils.datasplit import (
     GridCntxtTrgtGetter,
     RandomMasker,
     get_all_indcs,
-    get_remaining_indcs,
     no_masker,
 )
 from utils.data import cntxt_trgt_collate, get_test_upscale_factor
 
-# CONTEXT TARGET SPLIT
-get_cntxt_trgt_1d = cntxt_trgt_collate(
-    CntxtTrgtGetter(
-        contexts_getter=GetRandomIndcs(a=0.0, b=50), targets_getter=get_all_indcs,
+get_cntxt_trgt_2d = cntxt_trgt_collate(
+    GridCntxtTrgtGetter(
+        context_masker=RandomMasker(a=0.0, b=0.3), target_masker=no_masker,
     )
 )
 
-get_cntxt_trgt_1d_test = cntxt_trgt_collate(
-    CntxtTrgtGetter(
-        contexts_getter=GetRandomIndcs(a=0.0, b=50), targets_getter=get_remaining_indcs,
-    )
-)
-
-
-# %%
 from functools import partial
 
 from npf import LNP, PACBayesLNP
 from npf.architectures import MLP, BayesianMLP, merge_flat_input
 from utils.helpers import count_parameters
 
-n_samples_test=32
+n_samples_train = 8
+n_samples_test = 32
 
 R_DIM = 128
 MODEL_KWARGS = dict(
-    x_dim=1,
-    y_dim=1,
+    n_z_samples_test=n_samples_test,  # number of samples when eval
     r_dim=R_DIM,
-    n_z_samples_test=n_samples_test,
+    x_dim=2,
     XYEncoder=merge_flat_input(  # MLP takes single input but we give x and y so merge them
-        partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 2), is_sum_merge=True,
+        partial(MLP, n_hidden_layers=2, hidden_size=R_DIM * 3), is_sum_merge=True,
     ),
 )
 
-bayes_decoder=merge_flat_input(  # MLP takes single input but we give x and R so merge them
+
+
+bayes_decoder=merge_flat_input(
     partial(BayesianMLP, n_hidden_layers=4, hidden_size=R_DIM), is_sum_merge=True,
+)
+
+non_bayes_xencoder=partial(MLP, n_hidden_layers=1, hidden_size=R_DIM)
+
+non_bayes_decoder=merge_flat_input(
+    partial(MLP, n_hidden_layers=4, hidden_size=R_DIM), is_sum_merge=True,
 )
 
 n_samples_list = [1, 2, 4, 8, 16, 32]
@@ -86,6 +86,7 @@ for n in n_samples_list:
         BayesianMLP, n_hidden_layers=1, hidden_size=R_DIM, input_sampled=False,
         n_samples_train=n, n_samples_test=n_samples_test
     )
+
     bayes_models[n] = partial(
         PACBayesLNP,
         XEncoder=bayes_xencoder,
@@ -95,15 +96,8 @@ for n in n_samples_list:
         **MODEL_KWARGS
     )
 
-non_bayes_xencoder = partial(MLP, n_hidden_layers=1, hidden_size=R_DIM)
-
-non_bayes_decoder=merge_flat_input(  # MLP takes single input but we give x and R so merge them
-    partial(MLP, n_hidden_layers=4, hidden_size=R_DIM), is_sum_merge=True,
-)
-
 non_bayes_models_q_CT = {}
 non_bayes_models_q_C = {}
-
 for n in n_samples_list:
     non_bayes_models_q_CT[n] = partial(
         LNP,
@@ -124,68 +118,72 @@ for n in n_samples_list:
     )
 
 
-# %%
 import skorch
 from npf import ELBOLossLNPF, PACMLossLNPF, PAC2LossLNPF, PAC2TLossLNPF, PACELBOLossLNPF, NLLLossLNPF
 from utils.ntbks_helpers import add_y_dim
 from utils.train import train_models
 
 TRAINERS_KWARGS = dict(
-    test_datasets=gp_test_datasets,
-    iterator_train__collate_fn=get_cntxt_trgt_1d,
-    iterator_valid__collate_fn=get_cntxt_trgt_1d,
+    chckpnt_dirname="results/experiments_24-05-21/",
     max_epochs=30,
     is_retrain=True,  # whether to load precomputed model or retrain
     is_reeval=True,
-    chckpnt_dirname="results/experiments_24-05-21/",
     device=None,  # use GPU if available
-    batch_size=32,
+    batch_size=16,
     lr=1e-3,
     decay_lr=10,  # decrease learning rate by 10 during training
     seed=123,
     criterion__eval_use_crossentropy=False,
-    # verbose=0
+    test_datasets=img_test_datasets,
+    train_split=skorch.dataset.CVSplit(0.1),  # use 10% of training for valdiation
+    iterator_train__collate_fn=get_cntxt_trgt_2d,
+    iterator_valid__collate_fn=get_cntxt_trgt_2d,
 )
+
 
 # %%
 for n in n_samples_list:
     beta=1.
     trainers_pacm = train_models(
-        gp_datasets,
-        {
-            f"LNP_PACM_EncCT_Beta{beta}_nsamples{n}":bayes_models[n],
-        },
+        img_datasets,
+        add_y_dim(
+            {
+                f"LNP_PACM_EncCT_Beta{beta}_nsamples{n}": bayes_models[n],
+            },
+            img_datasets),  # y_dim (channels) depend on data
         criterion=PACMLossLNPF,
         criterion__beta = beta,
         **TRAINERS_KWARGS
     )
-    
+
     trainers_elbo = train_models(
-        gp_datasets,
-        {
-            f"LNP_ELBO_Beta{beta}_nsamples{n}":non_bayes_models_q_CT[n],
-        },
+        img_datasets,
+        add_y_dim({f"LNP_ELBO_EncCT_Beta{beta}_nsamples{n}": non_bayes_models_q_CT[n]}, img_datasets),  # y_dim (channels) depend on data
         criterion=ELBOLossLNPF,
         criterion__beta = beta,
         **TRAINERS_KWARGS
     )
 
     trainers_npml = train_models(
-        gp_datasets,
-        {
-            f"LNP_NPML_nsamples{n}":non_bayes_models_q_C[n],
-        },
-        criterion=NLLLossLNPF,
-        criterion__beta = beta,
+        img_datasets,
+        add_y_dim(
+            {
+                f"LNP_NPML_nsamples{n}": non_bayes_models_q_C[n],
+            },
+            img_datasets),  # y_dim (channels) depend on data
+        criterion=NLLLossLNPF, 
+        criterion__beta = 1.,
         **TRAINERS_KWARGS
     )
 
-    beta=1e-6
+    beta = 1e-6
     trainers_pacm = train_models(
-        gp_datasets,
-        {
-            f"LNP_PACM_EncCT_Beta{beta}_nsamples{n}":bayes_models[n],
-        },
+        img_datasets,
+        add_y_dim(
+            {
+                f"LNP_PACM_EncCT_Beta{beta}_nsamples{n}": bayes_models[n],
+            },
+            img_datasets),  # y_dim (channels) depend on data
         criterion=PACMLossLNPF,
         criterion__beta = beta,
         **TRAINERS_KWARGS
