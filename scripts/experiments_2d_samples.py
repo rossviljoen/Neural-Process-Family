@@ -53,7 +53,6 @@ from npf import LNP, PACBayesLNP
 from npf.architectures import MLP, BayesianMLP, merge_flat_input
 from utils.helpers import count_parameters
 
-n_samples_train = 8
 n_samples_test = 32
 
 R_DIM = 128
@@ -78,7 +77,8 @@ non_bayes_decoder=merge_flat_input(
     partial(MLP, n_hidden_layers=4, hidden_size=R_DIM), is_sum_merge=True,
 )
 
-n_samples_list = [1, 2, 4, 8, 16, 32]
+# n_samples_list = [1, 2, 4, 8, 16, 32]
+n_samples_list = [8, 16, 32]
 
 bayes_models = {}
 for n in n_samples_list:
