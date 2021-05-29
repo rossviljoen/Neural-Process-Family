@@ -78,7 +78,7 @@ non_bayes_decoder=merge_flat_input(
 )
 
 # n_samples_list = [1, 2, 4, 8, 16, 32]
-n_samples_list = [8, 16, 32]
+n_samples_list = [16]
 
 bayes_models = {}
 for n in n_samples_list:
