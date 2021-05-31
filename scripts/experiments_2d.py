@@ -123,7 +123,6 @@ TRAINERS_KWARGS = dict(
     lr=1e-3,
     decay_lr=10,  # decrease learning rate by 10 during training
     seed=123,
-    criterion__eval_use_crossentropy=False,
     test_datasets=img_test_datasets,
     train_split=skorch.dataset.CVSplit(0.1),  # use 10% of training for valdiation
     iterator_train__collate_fn=get_cntxt_trgt_2d,
@@ -145,10 +144,10 @@ TRAINERS_KWARGS = dict(
 #     **TRAINERS_KWARGS
 # )
 
-# betas = [1e-6, 1e-4, 1e-2, 1., 1e2]
-# betas = [1., 1e-2, 1e2, 1e-4]
+betas = [1e-6, 1e-4, 1e-2, 1., 1e2]
 
-# for beta in betas:
+
+for beta in betas:
     # trainers_pacelbo = train_models(
     #     img_datasets,
     #     add_y_dim(
@@ -173,6 +172,18 @@ TRAINERS_KWARGS = dict(
     #     **TRAINERS_KWARGS
     # )
 
+    trainers_pac2t = train_models(
+        img_datasets,
+        add_y_dim(
+            {
+                f"LNP_PAC2T_EncCT_Beta{beta}": model_2d_bayes,
+            },
+            img_datasets),  # y_dim (channels) depend on data
+        criterion=PAC2TLossLNPF,
+        criterion__beta = beta,
+        **TRAINERS_KWARGS
+    )
+
     # trainers_pacm_joint = train_models(
     #     img_datasets,
     #     add_y_dim(
@@ -192,39 +203,3 @@ TRAINERS_KWARGS = dict(
     #     criterion__beta = beta,
     #     **TRAINERS_KWARGS
     # )
-
-
-beta = 1e-2
-
-trainers_elbo = train_models(
-    img_datasets,
-    add_y_dim({f"LNP_ELBO_EncCT_Beta{beta}": model_2d_non_bayes}, img_datasets),  # y_dim (channels) depend on data
-    criterion=ELBOLossLNPF,
-    criterion__beta = beta,
-    **TRAINERS_KWARGS
-)
-
-trainers_pacelbo = train_models(
-    img_datasets,
-    add_y_dim(
-        {
-            f"LNP_PACELBO_EncCT_Beta{beta}": model_2d_bayes,
-        },
-        img_datasets),  # y_dim (channels) depend on data
-    criterion=PACELBOLossLNPF,
-    criterion__beta = beta,
-    **TRAINERS_KWARGS
-)
-
-beta = 1.
-trainers_pacelbo = train_models(
-    img_datasets,
-    add_y_dim(
-        {
-            f"LNP_PACELBO_EncCT_Beta{beta}": model_2d_bayes,
-        },
-        img_datasets),  # y_dim (channels) depend on data
-    criterion=PACELBOLossLNPF,
-    criterion__beta = beta,
-    **TRAINERS_KWARGS
-)

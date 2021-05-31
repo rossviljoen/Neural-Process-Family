@@ -13,7 +13,9 @@ from npf.utils.helpers import (
 )
 from torch.distributions.kl import kl_divergence
 
-__all__ = ["CNPFLoss", "ELBOLossLNPF", "PAC2LossLNPF", "PACMLossLNPF", "PAC2TLossLNPF", "SUMOLossLNPF", "NLLLossLNPF", "PACELBOLossLNPF", "PACMJointLossLNPF"]
+__all__ = ["CNPFLoss", "ELBOLossLNPF", "PAC2LossLNPF", "PACMLossLNPF",
+           "PAC2TLossLNPF", "SUMOLossLNPF", "NLLLossLNPF", "PACELBOLossLNPF",
+           "PACMJointLossLNPF", "CELossLNPF", "CalibrationError"]
 
 
 def sum_log_prob(prob, sample):
@@ -42,16 +44,17 @@ class BaseLossNPF(nn.Module, abc.ABC):
             self,
             reduction="mean",
             is_force_mle_eval=True,
-            eval_use_crossentropy=False,
-            beta=1.
+            eval_loss=None,
+            beta=1.,
+            calibration_samples=20,
     ):
         super().__init__()
         self.reduction = reduction
         self.is_force_mle_eval = is_force_mle_eval
-        # self.train_all_data = train_all_data
-        self.eval_use_crossentropy = eval_use_crossentropy
+        self.eval_loss = eval_loss
         self.beta = beta
-
+        self.calibration_samples = calibration_samples
+        
     def forward(self, pred_outputs, Y):
         """Compute the Neural Process Loss.
 
@@ -77,10 +80,8 @@ class BaseLossNPF(nn.Module, abc.ABC):
             # always uses NPML for evaluation
             if self.is_force_mle_eval:
                 q_zCct = None
-            if self.eval_use_crossentropy:
-                loss = CELossLNPF.get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, p_z, decoder_kl, Y_trgt)
-            else:
-                loss = NLLLossLNPF.get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, p_z, decoder_kl, Y_trgt)
+            if self.eval_loss is None: self.eval_loss = NLLLossLNPF
+            loss = self.eval_loss.get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, p_z, decoder_kl, Y_trgt)
 
         if self.reduction is None:
             # size = [batch_size]
@@ -270,51 +271,50 @@ class PAC2LossLNPF(BaseLossNPF):
 class PAC2TLossLNPF(BaseLossNPF):
     """
     """
-
-    def get_loss(self, p_yCc, _, q_zCc, q_zCct, __, decoder_kl, Y_trgt):
-        # TODO: Make sure z_samples >= 2?
-        # Make sure it's divisible by 2?
-
+    def __init__(
+            self,
+            tighter=True,
+            **kwargs,
+    ):
+        super().__init__()
+        self.tighter = tighter
+    
+    def get_loss(self, p_yCc, _, q_zCc, q_zCct, p_z, decoder_kl, Y_trgt):
+        
+        n_z_samples, batch_size, *n_trgt = p_yCc.batch_shape
+        
         # size = [n_z_samples, batch_size, *]
-        log_p = p_yCc.log_prob(Y_trgt)
-
-        # size = [n_z_samples / 2, batch_size, *]
-        log_p, log_p_ = torch.chunk(log_p, chunks=2, dim=0)
+        log_probs = p_yCc.log_prob(Y_trgt)
 
         eps = 0.1 # add ε for numerical stability
         # size = [batch_size, *]
-        m_xi = (torch.maximum(log_p[0], log_p_[0]) + eps).detach()
+        m_xi = (torch.max(log_probs, dim=0, keepdim=True)[0] + eps).detach()
+        log_probs_centred = log_probs - m_xi
 
-        
-        alpha_xi = (torch.logsumexp(
-            torch.cat([torch.unsqueeze(log_p, dim=0), torch.unsqueeze(log_p_, dim=0)], dim=0), dim=0
-        ) - m_xi - math.log(2)).detach()
-        exp_alpha_xi = torch.exp(alpha_xi).detach()
-        h_alpha_xi = (alpha_xi / torch.pow(1 - exp_alpha_xi, 2)) + \
-            torch.pow(exp_alpha_xi * (1 - exp_alpha_xi), -1)
-        h_alpha_xi.detach()
-        
-        
-        var_term = h_alpha_xi * torch.exp(2*log_p - 2*m_xi) - torch.exp(log_p + log_p_ - 2*m_xi)
+        if self.tighter:
+            a = torch.logsumexp(log_probs_centred, dim=0) - math.log(n_z_samples)
+            h = (a / (1 - torch.exp(a))**2) + (1 / torch.exp(a) * (1 - torch.exp(a))).detach()
+        else:
+            h = 1.
+
+        var1 = h * torch.exp(2*log_probs_centred)
+        var2 = torch.mean(
+            h * torch.exp(log_probs_centred.unsqueeze(0)
+                      + log_probs_centred.unsqueeze(1)),
+            axis=0
+        )
+        var_term = (var1 - var2)
         sum_var = sum_from_nth_dim(var_term, 2)
         E_z_sum_var = sum_var.mean(0)
 
-        # size = [n_z_samples, batch_size]
-        sum_log_p = sum_from_nth_dim(log_p, 2)
-        
-        # first term in loss is E_{q(z|y_cntxt,y_trgt)}[\sum_t log p(y^t|z)]
-        # \sum_t log p(y^t|z). size = [z_samples, batch_size]
-        # sum_log_p_yCz, max_log_p_yCz = sum_log_prob_max(p_yCc, Y_trgt)
-        sum_log_p_yCz = sum_log_prob(p_yCc, Y_trgt)
-
-
-        # E_{q(z|y_cntxt,y_trgt)}[...] . size = [batch_size]
-        E_z_sum_log_p_yCz = sum_log_p_yCz.mean(0)
-
+        # log_probs_sum.shape = [num_samples, batch_size, num_x]
+        log_probs_sum = sum_from_nth_dim(log_probs, 2)
+        # E_q[logp(y | x, θ)]
+        E_z_sum_log_p_yCz = log_probs_sum.mean(0)
+            
         # second term in loss is \sum_l KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]
         # KL[q(z^l|y_cntxt,y_trgt)||q(z^l|y_cntxt)]. size = [batch_size, *n_lat]
         # kl_z = kl_divergence(q_zCct, q_zCc)
-
         if q_zCct is not None:
             kl_z = kl_divergence(q_zCct, p_z)
         else:
@@ -323,7 +323,7 @@ class PAC2TLossLNPF(BaseLossNPF):
         # \sum_l ... . size = [batch_size]
         E_z_kl = sum_from_nth_dim(kl_z, 1)
 
-        return -(E_z_sum_log_p_yCz + E_z_sum_var - E_z_kl)
+        return -(E_z_sum_log_p_yCz + E_z_sum_var - self.beta * (E_z_kl + decoder_kl))
 
 
 class NLLLossLNPF(BaseLossNPF):
@@ -380,7 +380,7 @@ class NLLLossLNPF(BaseLossNPF):
 
 class CELossLNPF(BaseLossNPF):
     """
-    Compute the cross entropy loss (aka "true predictive risk") from [1]
+    Compute the cross entropy loss (aka "empirical predictive risk") from [1]
 
     Notes
     -----
@@ -407,6 +407,42 @@ class CELossLNPF(BaseLossNPF):
 
         return -log_S
 
+class CalibrationError(BaseLossNPF):
+    """Compute the calibration error from [1, 2]
+
+    Notes
+    -----
+    - only to be used for evaluation, not training
+    
+    References
+    ----------
+    [1] Rothfuss, Jonas, et al. "PACOH: Bayes-optimal
+    meta-learning with PAC-guarantees." arXiv preprint arXiv:2002.05551 (2020).
+
+    [2] Kuleshov, Volodymyr, Nathan Fenner, and Stefano Ermon. "Accurate
+    uncertainties for deep learning using calibrated regression." International
+    Conference on Machine Learning. PMLR, 2018.
+
+    """
+
+    def get_loss(self, p_yCc, z_samples, q_zCc, q_zCct, p_z, decoder_kl, Y_trgt):
+        
+        n_z_samples, batch_size, *n_trgt = p_yCc.batch_shape
+
+        # print(p_yCc)
+        # size = [batch_shape, *n_trgt]
+        cum_probs = p_yCc.base_dist.cdf(Y_trgt).mean(0).squeeze(dim=-1) # assume y_dim==1
+
+        # confidence levels
+        qhs = [i / self.calibration_samples for i in range(self.calibration_samples)]
+        calib_err = torch.zeros(batch_size, device=cum_probs.device)
+        for qh in qhs:
+            # size = [batch_size]
+            emp_qh = sum_from_nth_dim(cum_probs <= qh, 1)
+            calib_err += torch.abs(qh - emp_qh)
+
+        calib_err /= self.calibration_samples
+        return calib_err
 
 #! might need gradient clipping as in their paper
 class SUMOLossLNPF(BaseLossNPF):

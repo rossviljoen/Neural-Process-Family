@@ -136,7 +136,7 @@ from utils.train import train_models
 KWARGS = dict(
     test_datasets=gp_test_datasets,
     iterator_train__collate_fn=get_cntxt_trgt_1d,
-    iterator_valid__collate_fn=get_cntxt_trgt_1d_test,
+    iterator_valid__collate_fn=get_cntxt_trgt_1d,
     max_epochs=30,
     is_retrain=True,  # whether to load precomputed model or retrain
     is_reeval=True,
@@ -146,12 +146,12 @@ KWARGS = dict(
     lr=1e-3,
     decay_lr=10,  # decrease learning rate by 10 during training
     seed=123,
-    criterion__eval_use_crossentropy=False,
     # verbose=0
 )
-# betas = [1e-6, 1e-4, 1e-2, 1., 1e2]
+betas = [1e-6, 1e-4, 1e-2, 1., 1e2]
 
 # %%
+# ACTUAL FULL EXPTS.
 # trainers_npml = train_models(
 #     gp_datasets,
 #     {
@@ -163,7 +163,7 @@ KWARGS = dict(
 #     **KWARGS
 # )
 
-# for beta in betas:
+for beta in betas:
     # trainers_pacelbo = train_models(
     #     gp_datasets,
     #     {
@@ -186,6 +186,17 @@ KWARGS = dict(
     #     **KWARGS
     # )
 
+    trainers_pacm = train_models(
+        gp_datasets,
+        {
+            # f"LNP_PAC2T_EncC_Beta{beta}": model_1d_q_C_bayes,
+            f"LNP_PAC2T_EncCT_Beta{beta}":model_1d_q_CT_bayes,
+        },
+        criterion=PAC2TLossLNPF,
+        criterion__beta = beta,
+        **KWARGS
+    )
+
     # trainers_pacm_joint = train_models(
     #     gp_datasets,
     #     {
@@ -206,59 +217,3 @@ KWARGS = dict(
     #     criterion__beta = beta,
     #     **KWARGS
     # )
-
-beta=1e-6
-trainers_elbo = train_models(
-    gp_datasets,
-    {
-        f"LNP_ELBO_EncCT_Beta{beta}":model_1d_q_CT,
-    },
-    criterion=ELBOLossLNPF,
-    criterion__beta = beta,
-    **KWARGS
-)
-    
-trainers_pacm_joint = train_models(
-    gp_datasets,
-    {
-        # f"LNP_PACM_EncC_Beta{beta}": model_1d_q_C_bayes,
-        f"LNP_PACM_Joint_EncCT_Beta{beta}":model_1d_q_CT_bayes,
-    },
-    criterion=PACMJointLossLNPF,
-    criterion__beta = beta,
-    **KWARGS
-)
-
-beta=1e-2
-trainers_elbo = train_models(
-    gp_datasets,
-    {
-        f"LNP_ELBO_EncCT_Beta{beta}":model_1d_q_CT,
-    },
-    criterion=ELBOLossLNPF,
-    criterion__beta = beta,
-    **KWARGS
-)
-
-trainers_pacelbo = train_models(
-    gp_datasets,
-    {
-        # f"LNP_PACELBO_EncC_Beta{beta}": model_1d_q_C_bayes,
-        f"LNP_PACELBO_EncCT_Beta{beta}":model_1d_q_CT_bayes,
-    },
-    criterion=PACELBOLossLNPF,
-    criterion__beta = beta,
-    **KWARGS
-)
-
-beta=1.
-trainers_pacelbo = train_models(
-    gp_datasets,
-    {
-        # f"LNP_PACELBO_EncC_Beta{beta}": model_1d_q_C_bayes,
-        f"LNP_PACELBO_EncCT_Beta{beta}":model_1d_q_CT_bayes,
-    },
-    criterion=PACELBOLossLNPF,
-    criterion__beta = beta,
-    **KWARGS
-)

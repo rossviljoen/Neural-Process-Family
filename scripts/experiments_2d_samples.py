@@ -77,8 +77,7 @@ non_bayes_decoder=merge_flat_input(
     partial(MLP, n_hidden_layers=4, hidden_size=R_DIM), is_sum_merge=True,
 )
 
-# n_samples_list = [1, 2, 4, 8, 16, 32]
-n_samples_list = [16]
+n_samples_list = [1, 2, 4, 8, 16, 32]
 
 bayes_models = {}
 for n in n_samples_list:
@@ -133,7 +132,6 @@ TRAINERS_KWARGS = dict(
     lr=1e-3,
     decay_lr=10,  # decrease learning rate by 10 during training
     seed=123,
-    criterion__eval_use_crossentropy=False,
     test_datasets=img_test_datasets,
     train_split=skorch.dataset.CVSplit(0.1),  # use 10% of training for valdiation
     iterator_train__collate_fn=get_cntxt_trgt_2d,
@@ -144,47 +142,59 @@ TRAINERS_KWARGS = dict(
 # %%
 for n in n_samples_list:
     beta=1.
-    trainers_pacm = train_models(
+    # trainers_pacm = train_models(
+    #     img_datasets,
+    #     add_y_dim(
+    #         {
+    #             f"LNP_PACM_EncCT_Beta{beta}_nsamples{n}": bayes_models[n],
+    #         },
+    #         img_datasets),  # y_dim (channels) depend on data
+    #     criterion=PACMLossLNPF,
+    #     criterion__beta = beta,
+    #     **TRAINERS_KWARGS
+    # )
+
+    trainers_pac2t = train_models(
         img_datasets,
         add_y_dim(
             {
-                f"LNP_PACM_EncCT_Beta{beta}_nsamples{n}": bayes_models[n],
+                f"LNP_PAC2T_EncCT_Beta{beta}_nsamples{n}": bayes_models[n],
             },
             img_datasets),  # y_dim (channels) depend on data
-        criterion=PACMLossLNPF,
+        criterion=PAC2TLossLNPF,
         criterion__beta = beta,
         **TRAINERS_KWARGS
     )
 
-    trainers_elbo = train_models(
-        img_datasets,
-        add_y_dim({f"LNP_ELBO_EncCT_Beta{beta}_nsamples{n}": non_bayes_models_q_CT[n]}, img_datasets),  # y_dim (channels) depend on data
-        criterion=ELBOLossLNPF,
-        criterion__beta = beta,
-        **TRAINERS_KWARGS
-    )
+    # trainers_elbo = train_models(
+    #     img_datasets,
+    #     add_y_dim({f"LNP_ELBO_EncCT_Beta{beta}_nsamples{n}": non_bayes_models_q_CT[n]}, img_datasets),  # y_dim (channels) depend on data
+    #     criterion=ELBOLossLNPF,
+    #     criterion__beta = beta,
+    #     **TRAINERS_KWARGS
+    # )
 
-    trainers_npml = train_models(
-        img_datasets,
-        add_y_dim(
-            {
-                f"LNP_NPML_nsamples{n}": non_bayes_models_q_C[n],
-            },
-            img_datasets),  # y_dim (channels) depend on data
-        criterion=NLLLossLNPF, 
-        criterion__beta = 1.,
-        **TRAINERS_KWARGS
-    )
+    # trainers_npml = train_models(
+    #     img_datasets,
+    #     add_y_dim(
+    #         {
+    #             f"LNP_NPML_nsamples{n}": non_bayes_models_q_C[n],
+    #         },
+    #         img_datasets),  # y_dim (channels) depend on data
+    #     criterion=NLLLossLNPF, 
+    #     criterion__beta = 1.,
+    #     **TRAINERS_KWARGS
+    # )
 
-    beta = 1e-6
-    trainers_pacm = train_models(
-        img_datasets,
-        add_y_dim(
-            {
-                f"LNP_PACM_EncCT_Beta{beta}_nsamples{n}": bayes_models[n],
-            },
-            img_datasets),  # y_dim (channels) depend on data
-        criterion=PACMLossLNPF,
-        criterion__beta = beta,
-        **TRAINERS_KWARGS
-    )
+    # beta = 1e-6
+    # trainers_pacm = train_models(
+    #     img_datasets,
+    #     add_y_dim(
+    #         {
+    #             f"LNP_PACM_EncCT_Beta{beta}_nsamples{n}": bayes_models[n],
+    #         },
+    #         img_datasets),  # y_dim (channels) depend on data
+    #     criterion=PACMLossLNPF,
+    #     criterion__beta = beta,
+    #     **TRAINERS_KWARGS
+    # )
