@@ -162,7 +162,7 @@ for n in n_samples_list:
     trainers_pac2t = train_models(
         gp_datasets,
         {
-            f"LNP_PAC2T_EncCT_Beta{beta}":bayes_models[n],
+            f"LNP_PAC2T_EncCT_Beta{beta}_nsamples{n}":bayes_models[n],
         },
         criterion=PAC2TLossLNPF,
         criterion__beta = beta,
