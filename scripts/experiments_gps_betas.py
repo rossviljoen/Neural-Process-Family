@@ -148,7 +148,8 @@ KWARGS = dict(
     seed=123,
     # verbose=0
 )
-betas = [1e-6, 1e-4, 1e-2, 1., 1e2]
+# betas = [1e-6, 1e-4, 1e-2, 1., 1e2]
+betas = [1e-4, 0.1, 10]
 
 # %%
 # ACTUAL FULL EXPTS.
@@ -164,27 +165,16 @@ betas = [1e-6, 1e-4, 1e-2, 1., 1e2]
 # )
 
 for beta in betas:
-    # trainers_pacelbo = train_models(
-    #     gp_datasets,
-    #     {
-    #         # f"LNP_PACELBO_EncC_Beta{beta}": model_1d_q_C_bayes,
-    #         f"LNP_PACELBO_EncCT_Beta{beta}":model_1d_q_CT_bayes,
-    #     },
-    #     criterion=PACELBOLossLNPF,
-    #     criterion__beta = beta,
-    #     **KWARGS
-    # )
-    
-    # trainers_pacm = train_models(
-    #     gp_datasets,
-    #     {
-    #         # f"LNP_PACM_EncC_Beta{beta}": model_1d_q_C_bayes,
-    #         f"LNP_PACM_EncCT_Beta{beta}":model_1d_q_CT_bayes,
-    #     },
-    #     criterion=PACMLossLNPF,
-    #     criterion__beta = beta,
-    #     **KWARGS
-    # )
+    trainers_pacm = train_models(
+        gp_datasets,
+        {
+            # f"LNP_PACM_EncC_Beta{beta}": model_1d_q_C_bayes,
+            f"LNP_PACM_EncCT_Beta{beta}":model_1d_q_CT_bayes,
+        },
+        criterion=PACMLossLNPF,
+        criterion__beta = beta,
+        **KWARGS
+    )
 
     trainers_pacm = train_models(
         gp_datasets,
@@ -196,24 +186,13 @@ for beta in betas:
         criterion__beta = beta,
         **KWARGS
     )
-
-    # trainers_pacm_joint = train_models(
-    #     gp_datasets,
-    #     {
-    #         # f"LNP_PACM_EncC_Beta{beta}": model_1d_q_C_bayes,
-    #         f"LNP_PACM_Joint_EncCT_Beta{beta}":model_1d_q_CT_bayes,
-    #     },
-    #     criterion=PACMJointLossLNPF,
-    #     criterion__beta = beta,
-    #     **KWARGS
-    # )
     
-    # trainers_elbo = train_models(
-    #     gp_datasets,
-    #     {
-    #         f"LNP_ELBO_EncCT_Beta{beta}":model_1d_q_CT,
-    #     },
-    #     criterion=ELBOLossLNPF,
-    #     criterion__beta = beta,
-    #     **KWARGS
-    # )
+    trainers_elbo = train_models(
+        gp_datasets,
+        {
+            f"LNP_ELBO_EncCT_Beta{beta}":model_1d_q_CT,
+        },
+        criterion=ELBOLossLNPF,
+        criterion__beta = beta,
+        **KWARGS
+    )
