@@ -29,7 +29,7 @@ import numpy as np
 
 import torch
 
-os.chdir("../..")
+os.chdir("..")
 
 warnings.filterwarnings("ignore")
 warnings.simplefilter("ignore")
