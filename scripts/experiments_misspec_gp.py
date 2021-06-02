@@ -30,6 +30,8 @@ import numpy as np
 import torch
 
 os.chdir("..")
+import sys
+sys.path.append('./')
 
 warnings.filterwarnings("ignore")
 warnings.simplefilter("ignore")
