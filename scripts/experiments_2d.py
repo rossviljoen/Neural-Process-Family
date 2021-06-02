@@ -130,47 +130,36 @@ TRAINERS_KWARGS = dict(
 )
 
 
-# # %%
-# trainers_npml = train_models(
-#     img_datasets,
-#     add_y_dim(
-#         {
-#             f"LNP_NPML_EncC": model_2d_q_C_non_bayes,
-#             f"LNP_NPML_EncCT": model_2d_non_bayes,
-#         },
-#         img_datasets),  # y_dim (channels) depend on data
-#     criterion=NLLLossLNPF,  # NPVI
-#     criterion__beta = 1.,
-#     **TRAINERS_KWARGS
-# )
+# %%
+trainers_npml = train_models(
+    img_datasets,
+    add_y_dim(
+        {
+            f"LNP_NPML_EncC": model_2d_q_C_non_bayes,
+            f"LNP_NPML_EncCT": model_2d_non_bayes,
+        },
+        img_datasets),  # y_dim (channels) depend on data
+    criterion=NLLLossLNPF,  # NPVI
+    criterion__beta = 1.,
+    **TRAINERS_KWARGS
+)
 
-betas = [1e-6, 1e-4, 1e-2, 1., 1e2]
-
+# betas = [1e-6, 1e-4, 1e-2, 0.1, 1., 10]
+# betas = [1e-4, 0.1, 10]
+betas = [1e-6, 1e-2, 1.]
 
 for beta in betas:
-    # trainers_pacelbo = train_models(
-    #     img_datasets,
-    #     add_y_dim(
-    #         {
-    #             f"LNP_PACELBO_EncCT_Beta{beta}": model_2d_bayes,
-    #         },
-    #         img_datasets),  # y_dim (channels) depend on data
-    #     criterion=PACELBOLossLNPF,
-    #     criterion__beta = beta,
-    #     **TRAINERS_KWARGS
-    # )
-
-    # trainers_pacm = train_models(
-    #     img_datasets,
-    #     add_y_dim(
-    #         {
-    #             f"LNP_PACM_EncCT_Beta{beta}": model_2d_bayes,
-    #         },
-    #         img_datasets),  # y_dim (channels) depend on data
-    #     criterion=PACMLossLNPF,
-    #     criterion__beta = beta,
-    #     **TRAINERS_KWARGS
-    # )
+    trainers_pacm = train_models(
+        img_datasets,
+        add_y_dim(
+            {
+                f"LNP_PACM_EncCT_Beta{beta}": model_2d_bayes,
+            },
+            img_datasets),  # y_dim (channels) depend on data
+        criterion=PACMLossLNPF,
+        criterion__beta = beta,
+        **TRAINERS_KWARGS
+    )
 
     trainers_pac2t = train_models(
         img_datasets,
@@ -183,23 +172,11 @@ for beta in betas:
         criterion__beta = beta,
         **TRAINERS_KWARGS
     )
-
-    # trainers_pacm_joint = train_models(
-    #     img_datasets,
-    #     add_y_dim(
-    #         {
-    #             f"LNP_PACM_Joint_EncCT_Beta{beta}": model_2d_bayes,
-    #         },
-    #         img_datasets),  # y_dim (channels) depend on data
-    #     criterion=PACMLossLNPF,
-    #     criterion__beta = beta,
-    #     **TRAINERS_KWARGS
-    # )
     
-    # trainers_elbo = train_models(
-    #     img_datasets,
-    #     add_y_dim({f"LNP_ELBO_EncCT_Beta{beta}": model_2d_non_bayes}, img_datasets),  # y_dim (channels) depend on data
-    #     criterion=ELBOLossLNPF,
-    #     criterion__beta = beta,
-    #     **TRAINERS_KWARGS
-    # )
+    trainers_elbo = train_models(
+        img_datasets,
+        add_y_dim({f"LNP_ELBO_EncCT_Beta{beta}": model_2d_non_bayes}, img_datasets),  # y_dim (channels) depend on data
+        criterion=ELBOLossLNPF,
+        criterion__beta = beta,
+        **TRAINERS_KWARGS
+    )

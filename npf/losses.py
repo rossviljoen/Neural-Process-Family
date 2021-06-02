@@ -276,7 +276,7 @@ class PAC2TLossLNPF(BaseLossNPF):
             tighter=True,
             **kwargs,
     ):
-        super().__init__()
+        super().__init__(**kwargs)
         self.tighter = tighter
     
     def get_loss(self, p_yCc, _, q_zCc, q_zCct, p_z, decoder_kl, Y_trgt):
@@ -322,6 +322,9 @@ class PAC2TLossLNPF(BaseLossNPF):
 
         # \sum_l ... . size = [batch_size]
         E_z_kl = sum_from_nth_dim(kl_z, 1)
+
+        # KL[q(\theta)||p(\theta)] (if given)
+        decoder_kl = 0. if decoder_kl is None else decoder_kl
 
         return -(E_z_sum_log_p_yCz + E_z_sum_var - self.beta * (E_z_kl + decoder_kl))
 
