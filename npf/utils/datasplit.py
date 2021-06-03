@@ -18,6 +18,7 @@ __all__ = [
     "get_all_indcs",
     "get_remaining_indcs",
     "GetRangeIndcs",
+    "GetFractionIndcs",
     "GetRandomIndcs",
     "CntxtTrgtGetter",
     "RandomMasker",
@@ -51,6 +52,17 @@ class GetRangeIndcs:
 
     def __call__(self, batch_size, n_possible_points):
         indcs = torch.arange(*self.arange)
+        return indcs.expand(batch_size, len(indcs))
+
+class GetFractionIndcs:
+    """Get the first x% of indices."""
+
+    def __init__(self, frac):
+        self.frac = frac
+
+    def __call__(self, batch_size, n_possible_points):
+        n = n_possible_points // (1 / self.frac)
+        indcs = torch.arange(start=0, end=n, dtype=torch.int64)
         return indcs.expand(batch_size, len(indcs))
 
 
@@ -148,7 +160,7 @@ class GetRandomIndcs:
             indcs = torch.from_numpy(indcs[:, :n_indcs])
 
         if self.range_indcs is not None:
-            # adding is teh same as shifting
+            # adding is the same as shifting
             indcs += self.range_indcs[0]
 
         return indcs

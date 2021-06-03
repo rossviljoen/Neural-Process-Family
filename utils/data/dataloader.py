@@ -3,7 +3,7 @@ import torch
 __all__ = ["cntxt_trgt_collate"]
 
 
-def cntxt_trgt_collate(get_cntxt_trgt, is_duplicate_batch=False, **kwargs):
+def cntxt_trgt_collate(get_cntxt_trgt, is_duplicate_batch=False, force_single_batch=False, **kwargs):
     """Transformes and collates inputs to neural processes given the whole input.
 
     Parameters
@@ -17,7 +17,9 @@ def cntxt_trgt_collate(get_cntxt_trgt, is_duplicate_batch=False, **kwargs):
         for every function. If so the batch will contain the concatenation of both.
     """
 
-    def mycollate(batch):
+    def mycollate(batch, force_single_batch=force_single_batch):
+        if force_single_batch:
+            batch = batch[:1]
         collated = torch.utils.data.dataloader.default_collate(batch)
         X = collated[0]
         y = collated[1]

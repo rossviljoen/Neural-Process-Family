@@ -30,7 +30,7 @@ from npf.utils.datasplit import (
     no_masker,
 )
 
-from utils.data import DIR_DATA, GPDataset, get_train_test_img_dataset
+from utils.data import DIR_DATA, GPDataset, get_train_test_img_dataset, PhysioNet
 from utils.data.helpers import DatasetMerger
 from utils.data.imgs import SingleImage, get_test_upscale_factor
 from utils.helpers import set_seed
@@ -49,6 +49,14 @@ except ImportError:
     pass
 
 # DATA
+def get_physionet_datasets():
+    train_datasets = {"PhysioNet-GCS":PhysioNet(split="train", target="GCS"),
+                      "PhysioNet-HCT":PhysioNet(split="train", target="HCT")}
+    test_datasets =  {"PhysioNet-GCS":PhysioNet(split="test", target="GCS"),
+                     "PhysioNet-HCT":PhysioNet(split="test", target="HCT")}
+    return train_datasets, test_datasets
+
+
 def get_img_datasets(datasets):
     """Return the correct instantiated train and test datasets."""
     train_datasets, test_datasets = dict(), dict()
@@ -374,6 +382,7 @@ def plot_multi_posterior_samples_1d(
     pretty_renamer=PRETTY_RENAMER,
     is_plot_generator=True,
     imgsize=(8, 3),
+    axes=None,
     **kwargs,
 ):
     """Plot posterior samples conditioned on `n_cntxt` context points for a set of trained trainers."""
@@ -382,14 +391,17 @@ def plot_multi_posterior_samples_1d(
         n_trainers = len(trainers)
 
         n_col = 1 if trainers_compare is None else 2
-        fig, axes = plt.subplots(
-            n_trainers,
-            n_col,
-            figsize=(imgsize[0] * n_col, imgsize[1] * n_trainers),
-            sharex=True,
-            sharey=True,
-            squeeze=False,
-        )
+        if axes is None:
+            fig, axes = plt.subplots(
+                n_trainers,
+                n_col,
+                figsize=(imgsize[0] * n_col, imgsize[1] * n_trainers),
+                sharex=True,
+                sharey=True,
+                squeeze=False,
+            )
+        else:
+            fig = None
 
         for j, curr_trainers in enumerate([trainers, trainers_compare]):
             if curr_trainers is None:

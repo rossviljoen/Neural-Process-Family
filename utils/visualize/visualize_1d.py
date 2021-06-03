@@ -481,13 +481,14 @@ def _plot_posterior_predefined_cntxt(
         Y_trgt = Y_trgt.numpy()[0, :, 0].flatten()
         X_trgt_plot = rescale_range(X_trgt, (-1, 1), train_min_max)
         ax.plot(X_trgt_plot, Y_trgt, "--k", alpha=0.7, label="Target Function")
+        # ax.scatter(X_trgt_plot, Y_trgt, marker="x", alpha=0.3, label="Target Set")
         y_min = min(y_min, Y_trgt.min())
         y_max = max(y_max, Y_trgt.max())
 
     if is_conditioned:
         if scatter_label is not None:
             scatter_kwargs["label"] = scatter_label
-        ax.scatter(X_cntxt_plot, Y_cntxt[0, :, 0].numpy(), c="k", **scatter_kwargs)
+        ax.scatter(X_cntxt_plot, Y_cntxt[0, :, 0].numpy(), c="k", zorder=100, **scatter_kwargs)
         x_min = min(min(X_cntxt_plot), x_min)
         x_max = max(max(X_cntxt_plot), x_max)
 
